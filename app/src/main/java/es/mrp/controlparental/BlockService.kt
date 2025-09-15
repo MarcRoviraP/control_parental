@@ -1,6 +1,7 @@
 package es.mrp.controlparental
 
 import android.app.*
+import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.graphics.Color
 import android.os.Build
@@ -14,6 +15,7 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
+import android.content.ComponentName
 import android.content.Intent
 
 class AppBlockerOverlayService : Service() {
@@ -93,14 +95,32 @@ class AppBlockerOverlayService : Service() {
         lastApp?.let { packageName ->
             Log.d("OverlayService", "Foreground: $packageName")
             if (blockedApps.contains(packageName)) {
-                Log.d("OverlayService", "Bloqueando $packageName")
-                showOverlay()
+                blockApp(packageName)
             }else{
                 removeOverlay()
             }
         }
     }
 
+    private fun blockApp(packageName: String) {
+        Log.d("OverlayServiceBlock", "Bloqueando: $packageName")
+        val componentName = ComponentName(this, ParentalControlAdminReceiver::class.java)
+        val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+
+        if (devicePolicyManager.isAdminActive(componentName)) {
+            // Ocultar la app del launcher
+            devicePolicyManager.setApplicationHidden(componentName, packageName, true)
+        }
+    }
+
+    private fun unblockApp(packageName: String) {
+        val componentName = ComponentName(this, ParentalControlAdminReceiver::class.java)
+        val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+
+        if (devicePolicyManager.isAdminActive(componentName)) {
+            devicePolicyManager.setApplicationHidden(componentName, packageName, false)
+        }
+    }
     private var overlayView: TextView? = null
 
     private fun showOverlay() {

@@ -20,6 +20,8 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("QueryPermissionsNeeded")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        enableDeviceAdmin()
         if (
             !android.provider.Settings.canDrawOverlays(this)) {
             val intent = Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
@@ -103,4 +105,19 @@ class MainActivity : ComponentActivity() {
         val seconds = totalSeconds % 60
         return String.format("%dh %02dm %02ds", hours, minutes, seconds)
     }
+    private fun enableDeviceAdmin() {
+        val componentName = ComponentName(this, ParentalControlAdminReceiver::class.java)
+        val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+
+        if (!devicePolicyManager.isAdminActive(componentName)) {
+            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, componentName)
+                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    "Esta aplicación necesita permisos de administrador para proteger el control parental")
+            }
+            startActivity(intent)
+        }
+    }
+
+
 }
