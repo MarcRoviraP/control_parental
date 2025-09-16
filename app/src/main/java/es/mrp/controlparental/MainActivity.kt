@@ -15,8 +15,11 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.button.setOnClickListener {
+        binding.cardVwChild.setOnClickListener {
             startActivity(android.content.Intent(this, ChildActivity::class.java))
+        }
+        binding.cardVwParent.setOnClickListener {
+            startActivity(android.content.Intent(this, ParentAccountActivity::class.java))
         }
     }
 }

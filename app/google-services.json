@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "862630853803",
+    "project_id": "controlparental-45504",
+    "storage_bucket": "controlparental-45504.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:862630853803:android:2e2604f3377cf995eb4bee",
+        "android_client_info": {
+          "package_name": "es.mrp.controlparental"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "862630853803-ah1jfkk7sf012rjlctf5e93s23n7nnmf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "es.mrp.controlparental",
+            "certificate_hash": "1e94874da30a970ec11658c68556b25f3733228f"
+          }
+        },
+        {
+          "client_id": "862630853803-0anq8ocn6dbjjdul3pad85dsnldqbkm6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBi-z3C61cPhIe_R46RMevQB52U3EaTMTE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "862630853803-0anq8ocn6dbjjdul3pad85dsnldqbkm6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

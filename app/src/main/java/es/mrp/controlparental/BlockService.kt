@@ -17,8 +17,9 @@ package es.mrp.controlparental
     import android.app.usage.UsageStatsManager
     import android.content.ComponentName
     import android.content.Intent
+    import java.util.Timer
 
-    class AppBlockerOverlayService : Service() {
+class AppBlockerOverlayService : Service() {
 
         private lateinit var usageStatsManager: UsageStatsManager
         private val handler = Handler(Looper.getMainLooper())
@@ -106,14 +107,18 @@ package es.mrp.controlparental
         }
 
         private fun blockApp(packageName: String) {
+
             Log.d("OverlayServiceBlock", "Bloqueando: $packageName")
-            isBlockingActive = true
+            handler.postDelayed({
+                isBlockingActive = true
 
-            // 1. Mostrar overlay INMEDIATAMENTE
-            showOverlay()
+                // 1. Mostrar overlay INMEDIATAMENTE
+                showOverlay()
 
-            // 2. Forzar app al background
-            forceAppToBackground()
+                // 2. Forzar app al background
+                forceAppToBackground()
+
+            },3000)
 
         }
 
