@@ -2,6 +2,7 @@ package es.mrp.controlparental
 
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -24,6 +25,15 @@ class ChildActivity : AppCompatActivity() {
             insets
         }
 
+        binding.floatingActionButton.setOnClickListener {
+         try {
+            Log.d("ChildActivity", "FloatingActionButton clicked")
+            val dialog = QRDialog()
+            dialog.show(supportFragmentManager, "QRDialog" )
+         }catch (e: Exception){
+             Log.e("ChildActivity", e.toString())
+         }
+        }
         setupRecyclerView()
     }
 

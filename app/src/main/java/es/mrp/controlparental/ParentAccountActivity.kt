@@ -47,8 +47,7 @@ class ParentAccountActivity : AppCompatActivity() {
         // [END initialize_credential_manager]
 
         // Botón de Google
-        signOut()
-            launchCredentialManager()
+        launchCredentialManager()
 
 
     }
