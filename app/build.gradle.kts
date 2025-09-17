@@ -59,10 +59,13 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0-alpha05")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
+    implementation("androidx.preference:preference-ktx:1.2.1")
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:34.2.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-database")
+    implementation("com.google.firebase:firebase-firestore:25.1.1")
 
     implementation("androidx.credentials:credentials:1.5.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0")

@@ -2,6 +2,7 @@ package es.mrp.controlparental
 
 import android.annotation.SuppressLint
 import android.app.Dialog
+import android.content.Context.MODE_PRIVATE
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Color.*
@@ -9,9 +10,11 @@ import android.os.Bundle
 import android.widget.ImageView
 import androidx.fragment.app.DialogFragment
 import androidx.appcompat.app.AlertDialog
+import com.google.mlkit.common.sdkinternal.SharedPrefManager
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.WriterException
 import com.google.zxing.qrcode.QRCodeWriter
+import androidx.core.content.edit
 
 class QRDialog : DialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -34,7 +37,14 @@ class QRDialog : DialogFragment() {
     }
 
     private fun createUUID(): String {
-        return String.format(java.util.UUID.randomUUID().toString() + "- -" + System.currentTimeMillis())
+        val sharedPref = requireContext().getSharedPreferences("preferences",MODE_PRIVATE)
+        UUID = sharedPref.getString("uuid", null)
+        if (UUID == null) {
+            UUID =java.util.UUID.randomUUID().toString()
+        sharedPref.edit { putString("uuid", UUID) }
+
+        }
+        return String.format(UUID + "- -" + System.currentTimeMillis())
     }
     @SuppressLint("UseKtx")
     fun generateQRCode(content: String, size: Int = 512): Bitmap? {

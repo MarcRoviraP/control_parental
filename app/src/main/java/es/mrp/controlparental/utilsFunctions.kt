@@ -12,6 +12,7 @@ package es.mrp.controlparental
     import android.provider.Settings
     import android.util.Log
 
+    var UUID: String? = "uuid"
     val blockedApps = mutableSetOf<String>()
     fun getInstalledApps(
         context: Context,

@@ -3,8 +3,6 @@ package es.mrp.controlparental
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import es.mrp.controlparental.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
@@ -21,5 +19,6 @@ class MainActivity : AppCompatActivity() {
         binding.cardVwParent.setOnClickListener {
             startActivity(android.content.Intent(this, ParentAccountActivity::class.java))
         }
+
     }
 }

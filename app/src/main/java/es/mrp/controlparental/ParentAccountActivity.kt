@@ -1,12 +1,10 @@
 package es.mrp.controlparental
 import android.Manifest
-import android.R.attr.bitmap
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
-import android.widget.Toast
 import android.widget.Toast.*
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
@@ -44,6 +42,7 @@ import kotlinx.coroutines.launch
  */
 class ParentAccountActivity : AppCompatActivity() {
 
+    private var toggleScanner = true
     private lateinit var binding: ActivityParentAccountBinding
     private lateinit var previewView: PreviewView
 
@@ -75,18 +74,10 @@ class ParentAccountActivity : AppCompatActivity() {
         if (auth.currentUser == null) {
             Log.e(TAG, "Firebase auth is null")
             launchCredentialManager()
-        }else{
-            //displayUI()
         }
 
 
       }
- /*   private fun displayUI() {
-        val name = auth.currentUser?.displayName
-        Log.d(TAG, "Firebase auth is not null: $name")
-        supportActionBar?.title = name
-        setContentView(binding.root)
-    }*/
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
 
         menuInflater.inflate(R.menu.parents_toolbar,menu)
@@ -106,7 +97,12 @@ class ParentAccountActivity : AppCompatActivity() {
             R.id.scannerQR -> {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                     == PackageManager.PERMISSION_GRANTED) {
-                    startCamera()
+                    if (toggleScanner){
+
+                        startCamera()
+                    }else{
+                        stopScanner()
+                    }
                 } else {
                     ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 123)
                 }
@@ -130,6 +126,7 @@ class ParentAccountActivity : AppCompatActivity() {
 
     @OptIn(ExperimentalGetImage::class)
     private fun startCamera() {
+        toggleScanner = false
         previewView = binding.previewView
         binding.previewView.visibility = android.view.View.VISIBLE
         // Usamos CameraX
@@ -159,9 +156,15 @@ class ParentAccountActivity : AppCompatActivity() {
                                 .addOnSuccessListener { barcodes ->
                                     for (barcode in barcodes) {
                                         Log.d("QR", "Contenido: ${barcode.rawValue}")
+                                        val resultUUID = checkInfo(barcode.rawValue)
+                                        if (resultUUID.isNotEmpty()){
+                                            addChildToParent(resultUUID)
+                                        }
+
+
                                         stopScanner()
                                     }
-                                    }
+                                }
                                 .addOnCompleteListener {
                                     imageProxy.close() // <- siempre cerrar el frame
                                 }
@@ -185,7 +188,48 @@ class ParentAccountActivity : AppCompatActivity() {
 
         }, ContextCompat.getMainExecutor(this))
     }
+    private fun addChildToParent(childUUID: String) {
+        val dbUtils = DataBaseUtils()
+        val parentUser = auth.currentUser
+        if (parentUser != null){
+            val parentUID = parentUser.uid
+            val updatesForChild = mapOf(
+                "parentUID" to parentUID
+            )
+            dbUtils.updateInFirestore("usuarios", childUUID, updatesForChild)
+
+            val messageForParent = hashMapOf<String,Any> (
+                "childUID" to childUUID,
+                "parentUID" to parentUID,
+                "timestamp" to System.currentTimeMillis()
+            )
+            dbUtils.writeInFirestore(dbUtils.collectionFamilia, messageForParent)
+            makeText(this, "Niño añadido correctamente", LENGTH_SHORT).show()
+        }else{
+            makeText(this, "Error al añadir niño", LENGTH_SHORT).show()
+        }
+
+    }
+    private fun checkInfo(info: String?) : String{
+        val parts = info?.split("- -")
+        val uuid = parts?.get(0)
+        val timestamp = parts?.get(1)?.toLong()
+        val actualTimeStamp = System.currentTimeMillis()
+        val difference = actualTimeStamp - (timestamp ?: 300001)
+
+        // 5 minutos = 300000 milisegundos
+        if (difference > 300000){
+            makeText(this, "El código QR ha caducado", LENGTH_SHORT).show()
+            return ""
+
+        }else{
+            makeText(this, "Código QR válido. UUID: $uuid", LENGTH_SHORT).show()
+            Log.d("QR", "UUID: $uuid")
+            return uuid ?: ""
+        }
+    }
     private fun stopScanner() {
+        toggleScanner = true
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
