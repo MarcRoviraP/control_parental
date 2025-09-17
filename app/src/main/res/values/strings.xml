@@ -2,4 +2,6 @@
     <string name="app_name">Control Parental</string>
     <string name="default_web_client_id">862630853803-0anq8ocn6dbjjdul3pad85dsnldqbkm6.apps.googleusercontent.com</string>
     <string name="scan_qr">Scan QR</string>
+    <string name="cerrar_sesi_n">Cerrar sesión</string>
+    <string name="scanner_qr">Scanner QR</string>
 </resources>
