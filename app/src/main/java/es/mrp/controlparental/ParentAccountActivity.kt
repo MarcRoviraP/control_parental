@@ -1,11 +1,13 @@
 package es.mrp.controlparental
 import android.Manifest
+import android.content.ContentValues.TAG
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
-import android.widget.Toast.*
+import android.widget.Toast.LENGTH_SHORT
+import android.widget.Toast.makeText
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
@@ -27,11 +29,11 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
-import com.google.firebase.Firebase
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import es.mrp.controlparental.databinding.ActivityParentAccountBinding
@@ -43,17 +45,11 @@ import kotlinx.coroutines.launch
 class ParentAccountActivity : AppCompatActivity() {
 
     private var toggleScanner = true
+    private var isProcessingQR = false  // Bandera para evitar escaneos múltiples
     private lateinit var binding: ActivityParentAccountBinding
     private lateinit var previewView: PreviewView
-
-    // [START declare_auth]
-
-    private lateinit var auth: FirebaseAuth
-    // [END declare_auth]
-
-    // [START declare_credential_manager]
-    private lateinit var credentialManager: CredentialManager
-    // [END declare_credential_manager]
+    private lateinit var dbUtils: DataBaseUtils
+    private lateinit var childUsageAdapter: ChildUsageAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,32 +58,108 @@ class ParentAccountActivity : AppCompatActivity() {
         setSupportActionBar(binding.toolbar)
         // [START initialize_auth]
         // Initialize Firebase Auth
-        auth = Firebase.auth
-        // [END initialize_auth]
 
-        // [START initialize_credential_manager]
-        // Initialize Credential Manager
-        credentialManager = CredentialManager.create(baseContext)
-        // [END initialize_credential_manager]
+        // Inicializar DataBaseUtils
+        dbUtils = DataBaseUtils(this)
 
-        // Botón de Google
-        if (auth.currentUser == null) {
-            Log.e(TAG, "Firebase auth is null")
-            launchCredentialManager()
+        // Configurar RecyclerView
+        setupRecyclerView()
+
+        // Iniciar escucha de datos de uso de hijos
+        startListeningToChildrenUsage()
+    }
+
+    /**
+     * Configura el RecyclerView para mostrar la lista de hijos
+     */
+    private fun setupRecyclerView() {
+        childUsageAdapter = ChildUsageAdapter()
+        binding.childrenRecyclerView.apply {
+            layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this@ParentAccountActivity)
+            adapter = childUsageAdapter
+        }
+    }
+
+    /**
+     * Inicia la escucha en tiempo real de los datos de uso de apps de todos los hijos
+     */
+    private fun startListeningToChildrenUsage() {
+        val currentUser = dbUtils.auth.currentUser
+
+        if (currentUser != null) {
+            val parentUuid = currentUser.uid
+
+            dbUtils.listenToChildrenAppUsage(parentUuid) { childUuid, usageData ->
+                // Aquí se reciben los datos en tiempo real cuando el hijo sube nueva información
+                Log.d("ParentActivity", "Datos recibidos del hijo: $childUuid")
+                Log.d("ParentActivity", "Total de apps monitoreadas: ${usageData.size}")
+
+                // Procesar los datos de uso
+                processChildUsageData(childUuid, usageData)
+            }
+
+            Log.d("ParentActivity", "Escuchando datos de hijos...")
+        } else {
+            Log.w("ParentActivity", "No hay usuario autenticado para escuchar datos")
+        }
+    }
+
+    /**
+     * Procesa los datos de uso recibidos del hijo
+     */
+    private fun processChildUsageData(childUuid: String, usageData: Map<String, Any>) {
+        // Convertir los datos de Firestore a la estructura de nuestra app
+        val apps = mutableListOf<AppUsageInfo>()
+        val timestamp = usageData["timestamp"] as? Long ?: System.currentTimeMillis()
+
+        // Procesar cada app en los datos
+        usageData.filter { it.key.startsWith("app_") }.forEach { (_, value) ->
+            if (value is Map<*, *>) {
+                val packageName = value["packageName"] as? String ?: ""
+                val appName = value["appName"] as? String ?: "App desconocida"
+                val timeInForeground = (value["timeInForeground"] as? Number)?.toLong() ?: 0L
+                val lastTimeUsed = (value["lastTimeUsed"] as? Number)?.toLong() ?: 0L
+
+                if (packageName.isNotEmpty()) {
+                    apps.add(
+                        AppUsageInfo(
+                            packageName = packageName,
+                            appName = appName,
+                            timeInForeground = timeInForeground,
+                            lastTimeUsed = lastTimeUsed
+                        )
+                    )
+                }
+            }
         }
 
+        runOnUiThread {
+            // Actualizar el adaptador con los nuevos datos
+            childUsageAdapter.updateChildData(childUuid, apps, timestamp)
 
-      }
+            // Mostrar/ocultar mensaje de estado vacío
+            if (childUsageAdapter.itemCount > 0) {
+                binding.emptyStateTextView.visibility = android.view.View.GONE
+                binding.childrenRecyclerView.visibility = android.view.View.VISIBLE
+            } else {
+                binding.emptyStateTextView.visibility = android.view.View.VISIBLE
+                binding.childrenRecyclerView.visibility = android.view.View.GONE
+            }
+
+            Log.d("ParentActivity", "Hijo $childUuid: ${apps.size} apps actualizadas")
+        }
+    }
+
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
 
-        menuInflater.inflate(R.menu.parents_toolbar,menu)
+        menuInflater.inflate(R.menu.parents_toolbar, menu)
         return super.onCreateOptionsMenu(menu)
     }
 
     @OptIn(ExperimentalGetImage::class)
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
 
-        return when (item.itemId){
+        return when (item.itemId) {
             R.id.signOutItem -> {
                 signOut()
                 finish()
@@ -97,10 +169,10 @@ class ParentAccountActivity : AppCompatActivity() {
             R.id.scannerQR -> {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                     == PackageManager.PERMISSION_GRANTED) {
-                    if (toggleScanner){
+                    if (toggleScanner) {
 
                         startCamera()
-                    }else{
+                    } else {
                         stopScanner()
                     }
                 } else {
@@ -113,6 +185,7 @@ class ParentAccountActivity : AppCompatActivity() {
             else -> super.onOptionsItemSelected(item)
         }
     }
+
     override fun onRequestPermissionsResult(
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
@@ -127,6 +200,7 @@ class ParentAccountActivity : AppCompatActivity() {
     @OptIn(ExperimentalGetImage::class)
     private fun startCamera() {
         toggleScanner = false
+        isProcessingQR = false  // Resetear la bandera al iniciar
         previewView = binding.previewView
         binding.previewView.visibility = android.view.View.VISIBLE
         // Usamos CameraX
@@ -154,15 +228,25 @@ class ParentAccountActivity : AppCompatActivity() {
                             val scanner = BarcodeScanning.getClient()
                             scanner.process(image)
                                 .addOnSuccessListener { barcodes ->
-                                    for (barcode in barcodes) {
+                                    // Solo procesar si no estamos procesando otro QR
+                                    if (!isProcessingQR && barcodes.isNotEmpty()) {
+                                        isProcessingQR = true  // Marcar como procesando
+                                        val barcode = barcodes[0]  // Solo tomar el primer QR
                                         Log.d("QR", "Contenido: ${barcode.rawValue}")
-                                        val resultUUID = checkInfo(barcode.rawValue)
-                                        if (resultUUID.isNotEmpty()){
-                                            addChildToParent(resultUUID)
-                                        }
 
-
-                                        stopScanner()
+                                        // Validar el QR de forma asíncrona
+                                        checkInfo(
+                                            uuid = barcode.rawValue,
+                                            onValid = { validUuid ->
+                                                // QR válido - agregar hijo
+                                                addChildToParent(validUuid)
+                                                stopScanner()
+                                            },
+                                            onInvalid = {
+                                                // QR inválido - el mensaje ya se mostró
+                                                stopScanner()
+                                            }
+                                        )
                                     }
                                 }
                                 .addOnCompleteListener {
@@ -188,48 +272,73 @@ class ParentAccountActivity : AppCompatActivity() {
 
         }, ContextCompat.getMainExecutor(this))
     }
-    private fun addChildToParent(childUUID: String) {
-        val dbUtils = DataBaseUtils()
-        val parentUser = auth.currentUser
-        if (parentUser != null){
-            val parentUID = parentUser.uid
-            val updatesForChild = mapOf(
-                "parentUID" to parentUID
-            )
-            dbUtils.updateInFirestore("usuarios", childUUID, updatesForChild)
 
-            val messageForParent = hashMapOf<String,Any> (
-                "childUID" to childUUID,
+    private fun addChildToParent(childUUID: String) {
+        val dbUtils = DataBaseUtils(this)
+        val parentUser = dbUtils.auth.currentUser
+        if (parentUser != null) {
+            val parentUID = parentUser.uid
+
+            val messageForParent = hashMapOf<String, Any>(
                 "parentUID" to parentUID,
-                "timestamp" to System.currentTimeMillis()
+                "childUID" to childUUID,
             )
-            dbUtils.writeInFirestore(dbUtils.collectionFamilia, messageForParent)
-            makeText(this, "Niño añadido correctamente", LENGTH_SHORT).show()
-        }else{
+            dbUtils.childExists(
+                childUuid = childUUID,
+                parentUuid = parentUID
+            ) { exists ->
+                if (exists) {
+                    Log.d("TAG", "El hijo ya está vinculado a este padre")
+                } else {
+                    Log.d("TAG", "No existe vinculación, se puede crear")
+                    dbUtils.writeInFirestore(dbUtils.collectionFamilia, messageForParent)
+                    makeText(this, "Niño añadido correctamente", LENGTH_SHORT).show()
+
+                }
+            }
+        } else {
             makeText(this, "Error al añadir niño", LENGTH_SHORT).show()
         }
-
     }
-    private fun checkInfo(info: String?) : String{
-        val parts = info?.split("- -")
-        val uuid = parts?.get(0)
-        val timestamp = parts?.get(1)?.toLong()
-        val actualTimeStamp = System.currentTimeMillis()
-        val difference = actualTimeStamp - (timestamp ?: 300001)
 
-        // 5 minutos = 300000 milisegundos
-        if (difference > 300000){
-            makeText(this, "El código QR ha caducado", LENGTH_SHORT).show()
-            return ""
+    /**
+     * Valida un UUID de QR contra Firestore
+     * @param uuid UUID escaneado del código QR
+     * @param onValid Callback ejecutado si el UUID es válido
+     * @param onInvalid Callback ejecutado si el UUID no es válido
+     */
+    private fun checkInfo(
+        uuid: String?,
+        onValid: (String) -> Unit,
+        onInvalid: () -> Unit
+    ) {
+        if (uuid.isNullOrBlank()) {
+            makeText(this, "Código QR vacío o inválido", LENGTH_SHORT).show()
+            onInvalid()
+            return
+        }
 
-        }else{
-            makeText(this, "Código QR válido. UUID: $uuid", LENGTH_SHORT).show()
-            Log.d("QR", "UUID: $uuid")
-            return uuid ?: ""
+        val dbUtils = DataBaseUtils(this)
+
+        // Verificar si el UUID existe en Firestore
+        dbUtils.qrUuidExists(uuid) { exists ->
+            if (!exists) {
+                // UUID no encontrado en Firestore - puede estar caducado o ser inválido
+                makeText(this, "Código QR caducado o inválido", LENGTH_SHORT).show()
+                Log.w("QRScanner", "UUID no encontrado en Firestore (caducado o inválido): $uuid")
+                onInvalid()
+            } else {
+                // UUID válido - eliminar de Firestore y continuar
+                Log.d("QRScanner", "UUID válido encontrado: $uuid")
+                dbUtils.deleteQrContentFromFirestore(uuid)
+                onValid(uuid)
+            }
         }
     }
+
     private fun stopScanner() {
         toggleScanner = true
+        isProcessingQR = false  // Resetear la bandera al detener
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
@@ -241,91 +350,23 @@ class ParentAccountActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         // Check if user is signed in (non-null) and update UI accordingly.
-        val currentUser = auth.currentUser
+        val currentUser = DataBaseUtils(this).auth.currentUser
         updateUI(currentUser)
     }
-    // [END on_start_check_user]
 
-
-    private fun launchCredentialManager() {
-        // [START create_credential_manager_request]
-        // Instantiate a Google sign-in request
-        val googleIdOption = GetGoogleIdOption.Builder()
-            // Your server's client ID, not your Android client ID.
-            .setServerClientId(getString(R.string.default_web_client_id))
-            // Only show accounts previously used to sign in.
-            .setFilterByAuthorizedAccounts(false)
-            .build()
-
-        // Create the Credential Manager request
-        val request = GetCredentialRequest.Builder()
-            .addCredentialOption(googleIdOption)
-            .build()
-        // [END create_credential_manager_request]
-
-        lifecycleScope.launch {
-            try {
-                // Launch Credential Manager UI
-                val result = credentialManager.getCredential(
-                    context = baseContext,
-                    request = request
-                )
-
-                // Extract credential from the result returned by Credential Manager
-                handleSignIn(result.credential)
-            } catch (e: GetCredentialException) {
-                finish()
-                Log.e(TAG, "Couldn't retrieve user's credentials: ${e.localizedMessage}")
-            }
-            //displayUI()
-        }
-    }
-
-    // [START handle_sign_in]
-    private fun handleSignIn(credential: Credential) {
-        // Check if credential is of type Google ID
-        if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-            // Create Google ID Token
-            val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-
-            // Sign in to Firebase with using the token
-            firebaseAuthWithGoogle(googleIdTokenCredential.idToken)
-        } else {
-            Log.w(TAG, "Credential is not of type Google ID!")
-        }
-    }
-    // [END handle_sign_in]
-
-    // [START auth_with_google]
-    private fun firebaseAuthWithGoogle(idToken: String) {
-        val credential = GoogleAuthProvider.getCredential(idToken, null)
-        auth.signInWithCredential(credential)
-            .addOnCompleteListener(this) { task ->
-                if (task.isSuccessful) {
-                    // Sign in success, update UI with the signed-in user's information
-                    Log.d(TAG, "signInWithCredential:success")
-                    val user = auth.currentUser
-                    updateUI(user)
-                } else {
-                    // If sign in fails, display a message to the user
-                    Log.w(TAG, "signInWithCredential:failure", task.exception)
-                    updateUI(null)
-                }
-            }
-    }
-    // [END auth_with_google]
 
     // [START sign_out]
     private fun signOut() {
         // Firebase sign out
-        auth.signOut()
+        DataBaseUtils(this).auth.signOut()
 
         // When a user signs out, clear the current user credential state from all credential providers.
         lifecycleScope.launch {
             try {
+                Log.d(TAG, "Clearing user credential state")
                 val clearRequest = ClearCredentialStateRequest()
-                credentialManager.clearCredentialState(clearRequest)
-                updateUI(null)
+                DataBaseUtils(this@ParentAccountActivity).credentialManager.clearCredentialState(clearRequest)
+
             } catch (e: ClearCredentialException) {
                 Log.e(TAG, "Couldn't clear user credentials: ${e.localizedMessage}")
             }
@@ -343,7 +384,5 @@ class ParentAccountActivity : AppCompatActivity() {
         }
     }
 
-    companion object {
-        private const val TAG = "GoogleActivity"
-    }
+
 }

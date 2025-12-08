@@ -9,11 +9,16 @@ package es.mrp.controlparental
     import android.content.Intent
     import android.content.pm.ApplicationInfo
     import android.content.pm.PackageManager
-    import android.provider.Settings
     import android.util.Log
+    import com.google.firebase.database.FirebaseDatabase
+    import kotlinx.coroutines.tasks.await
+    import java.time.ZoneId
+    import java.time.ZonedDateTime
+    import java.time.temporal.TemporalQueries.zone
 
-    var UUID: String? = "uuid"
+var UUID: String? = "uuid"
     val blockedApps = mutableSetOf<String>()
+
     fun getInstalledApps(
         context: Context,
         packages: List<ApplicationInfo>,
@@ -44,7 +49,7 @@ package es.mrp.controlparental
             val appName = pm.getApplicationLabel(app).toString()
             val packageName = app.packageName
             val totalTime = usageMap[packageName] ?: 0L
-//            if (totalTime == 0L) continue
+            // if (totalTime == 0L) continue
 
             returnList.add(AppPackageClass(packageName, appName, totalTime, false))
         }
@@ -83,3 +88,8 @@ package es.mrp.controlparental
             context.startActivity(intent)
         }
     }
+ fun getGlobalTimestamp() : Long {
+     val time = ZonedDateTime.now(ZoneId.of(ZoneId.getAvailableZoneIds().first())).toInstant().toEpochMilli()
+     Log.d("GlobalTimestamp", "Timestamp: $time")
+     return time
+}

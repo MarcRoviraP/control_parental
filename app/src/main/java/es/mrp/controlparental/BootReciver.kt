@@ -4,9 +4,12 @@ package es.mrp.controlparental
                             import android.content.Context
                             import android.content.Intent
                             import android.util.Log
-                            import kotlinx.coroutines.*
+                            import kotlinx.coroutines.CoroutineScope
+                            import kotlinx.coroutines.Dispatchers
+                            import kotlinx.coroutines.delay
+                            import kotlinx.coroutines.launch
 
-                            class BootReceiver : BroadcastReceiver() {
+class BootReceiver : BroadcastReceiver() {
                                 override fun onReceive(context: Context, intent: Intent?) {
                                     Log.d("BootReceiver", "Recibido intent: ${intent?.action}")
 

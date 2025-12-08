@@ -12,8 +12,9 @@ android {
     compileSdk = 35
 
     defaultConfig {
+
         applicationId = "es.mrp.controlparental"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -22,6 +23,7 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
     }
 
     buildTypes {
@@ -42,6 +44,7 @@ android {
         jvmTarget = "1.8"
     }
     buildFeatures {
+        buildConfig = true
         compose = true
         viewBinding = true
     }
@@ -55,24 +58,27 @@ android {
 
 dependencies {
 
+
     implementation("androidx.credentials:credentials:1.6.0-alpha05")
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0-alpha05")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     implementation("androidx.preference:preference-ktx:1.2.1")
+
+
     // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:34.2.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-database")
-    implementation("com.google.firebase:firebase-firestore:25.1.1")
+    implementation("com.google.firebase:firebase-firestore:26.0.2")
 
     implementation("androidx.credentials:credentials:1.5.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     //QR
-    implementation("com.google.zxing:core:3.4.1")
+    implementation("com.google.zxing:core:3.5.4")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     // Camara
     val cameraxVersion = "1.3.4" // última estable a septiembre 2025

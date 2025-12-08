@@ -1,8 +1,12 @@
 package es.mrp.controlparental
 
-    import android.app.*
-    import android.app.admin.DevicePolicyManager
+    import android.app.NotificationChannel
+    import android.app.NotificationManager
+    import android.app.Service
+    import android.app.usage.UsageEvents
+    import android.app.usage.UsageStatsManager
     import android.content.Context
+    import android.content.Intent
     import android.graphics.Color
     import android.os.Build
     import android.os.Handler
@@ -13,11 +17,6 @@ package es.mrp.controlparental
     import android.view.WindowManager
     import android.widget.TextView
     import androidx.core.app.NotificationCompat
-    import android.app.usage.UsageEvents
-    import android.app.usage.UsageStatsManager
-    import android.content.ComponentName
-    import android.content.Intent
-    import java.util.Timer
 
 class AppBlockerOverlayService : Service() {
 
