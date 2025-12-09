@@ -58,6 +58,8 @@ android {
 
 dependencies {
 
+    // WorkManager para tareas en segundo plano confiables
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     implementation("androidx.credentials:credentials:1.6.0-alpha05")
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0-alpha05")

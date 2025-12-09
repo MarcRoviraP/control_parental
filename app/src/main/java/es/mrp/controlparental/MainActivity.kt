@@ -198,6 +198,25 @@ class MainActivity : AppCompatActivity() {
                     val user = dbUtils.auth.currentUser
                     Log.d(TAG, "Usuario: ${user?.email}, Nombre: ${user?.displayName}")
 
+                    // NUEVO: Guardar UUID en SharedPreferences inmediatamente después del login
+                    user?.let {
+                        val sharedPref = getSharedPreferences("preferences", MODE_PRIVATE)
+                        sharedPref.edit().apply {
+                            putString("uuid", it.uid)
+                            apply()
+                        }
+                        Log.d(TAG, "✅ UUID guardado en SharedPreferences: ${it.uid}")
+
+                        // Iniciar el servicio de monitoreo si no está corriendo
+                        try {
+                            val serviceIntent = Intent(this, AppUsageMonitorService::class.java)
+                            startService(serviceIntent)
+                            Log.d(TAG, "✅ Servicio de monitoreo iniciado después del login")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Error iniciando servicio de monitoreo", e)
+                        }
+                    }
+
                     Toast.makeText(this, "✅ Bienvenido ${user?.displayName ?: user?.email}", Toast.LENGTH_SHORT).show()
                 } else {
                     Log.w(TAG, "Error en inicio de sesión con Google", task.exception)

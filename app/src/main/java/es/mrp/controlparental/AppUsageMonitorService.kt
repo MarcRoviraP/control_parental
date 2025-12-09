@@ -1,13 +1,18 @@
 package es.mrp.controlparental
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,23 +34,80 @@ class AppUsageMonitorService : Service() {
         private const val PREFS_NAME = "preferences"
         private const val UUID_KEY = "uuid"
         private const val UPDATE_INTERVAL = 30000L // 30 segundos
+        private const val NOTIFICATION_ID = 1001
+        private const val CHANNEL_ID = "app_usage_monitor_channel"
     }
 
     override fun onCreate() {
         super.onCreate()
-        val dbuitls = DataBaseUtils(this)
-        Log.d(TAG, "Servicio de monitoreo iniciado")
+        Log.d(TAG, "🚀 Servicio de monitoreo iniciado - onCreate()")
+
+        // IMPORTANTE: Iniciar en foreground INMEDIATAMENTE si es Android O+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Log.d(TAG, "📱 Android O+ detectado - Iniciando en foreground...")
+            try {
+                startAsForegroundService()
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error iniciando foreground service", e)
+            }
+        }
 
         dbUtils = DataBaseUtils(this)
 
         // Obtener el UUID del hijo desde SharedPreferences
-        childUuid = dbUtils.auth.currentUser?.uid
+        val sharedPref = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        childUuid = sharedPref.getString(UUID_KEY, null)
 
         if (childUuid != null) {
+            Log.d(TAG, "✅ UUID encontrado: $childUuid - Iniciando monitoreo")
             startMonitoring()
         } else {
-            Log.w(TAG, "No se encontró UUID del hijo, no se puede monitorear")
+            Log.w(TAG, "⚠️ No se encontró UUID del hijo, no se puede monitorear")
         }
+    }
+
+    private fun startAsForegroundService() {
+        try {
+            Log.d(TAG, "📝 Creando canal de notificación...")
+            createNotificationChannel()
+
+            Log.d(TAG, "🔔 Creando notificación...")
+            val notification = createNotification()
+
+            Log.d(TAG, "🎯 Llamando a startForeground()...")
+            startForeground(NOTIFICATION_ID, notification)
+
+            Log.d(TAG, "✅ Servicio iniciado en modo foreground exitosamente")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error en startAsForegroundService", e)
+            throw e
+        }
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Monitoreo de Apps",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Servicio de monitoreo de uso de aplicaciones"
+                setShowBadge(false)
+            }
+
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager?.createNotificationChannel(channel)
+        }
+    }
+
+    private fun createNotification(): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Control Parental")
+            .setContentText("Monitoreando uso de aplicaciones")
+            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
     }
 
     private fun startMonitoring() {
@@ -125,6 +187,30 @@ class AppUsageMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        Log.d(TAG, "📨 onStartCommand llamado")
+        Log.d(TAG, "Timestamp: ${System.currentTimeMillis()}")
+
+        val startedFromBoot = intent?.getBooleanExtra("started_from_boot", false) ?: false
+        val startedFromWorker = intent?.getBooleanExtra("started_from_worker", false) ?: false
+
+        when {
+            startedFromBoot -> Log.d(TAG, "🔄 ⭐ SERVICIO INICIADO DESDE BOOTRECEIVER ⭐")
+            startedFromWorker -> Log.d(TAG, "🔄 ⭐ SERVICIO INICIADO DESDE WORKMANAGER ⭐")
+            else -> Log.d(TAG, "▶️ Servicio iniciado manualmente desde la app")
+        }
+
+        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+        // Si no se había iniciado en onCreate, intentar aquí
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                startAsForegroundService()
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error en onStartCommand al iniciar foreground", e)
+            }
+        }
+
         return START_STICKY // El servicio se reinicia si es terminado por el sistema
     }
 

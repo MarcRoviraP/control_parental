@@ -8,6 +8,10 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 @SuppressLint("CustomSplashScreen")
 class SplashActivity : ComponentActivity() {
@@ -19,61 +23,108 @@ class SplashActivity : ComponentActivity() {
     private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
+        android.util.Log.d("SplashActivity", "📥 Resultado de Overlay Permission recibido")
         overlayPermissionRequested = true
-        checkPermissionsFlow()
+        // Re-verificar todos los permisos
+        checkAllPermissions()
     }
 
     private val usageAccessLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
+        android.util.Log.d("SplashActivity", "📥 Resultado de Usage Access recibido")
         usageAccessRequested = true
-        checkPermissionsFlow()
+        // Re-verificar todos los permisos
+        checkAllPermissions()
     }
 
     @SuppressLint("QueryPermissionsNeeded")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        android.util.Log.d("SplashActivity", "━━━━━━━━━━━ onCreate() ━━━━━━━━━━━")
+
         // Inicializar timestamp global
         getGlobalTimestamp()
 
-        // Iniciar flujo de permisos
-        checkPermissionsFlow()
+        // Guardar UUID de Google Auth e iniciar servicio de monitoreo
+        ensureUuidAndStartService()
+
+        // Configurar WorkManager para reiniciar servicios periódicamente
+        setupWorkManager()
+
+        // NO verificar auto-inicio aquí, se hará en onResume después de los otros permisos
     }
 
     override fun onResume() {
         super.onResume()
-        // Solo verificar si ya se han solicitado permisos
-        if (overlayPermissionRequested || usageAccessRequested || deviceAdminRequested) {
-            checkPermissionsFlow()
-        }
+        android.util.Log.d("SplashActivity", "━━━━━━━━━━━ onResume() ━━━━━━━━━━━")
+
+        // SIEMPRE verificar el estado de los permisos cuando se reanuda la actividad
+        checkAllPermissions()
     }
 
-    private fun checkPermissionsFlow() {
+    /**
+     * Verifica TODOS los permisos necesarios y los solicita en orden
+     * Se ejecuta SIEMPRE en onResume para asegurar que los permisos estén correctos
+     */
+    private fun checkAllPermissions() {
+        android.util.Log.d("SplashActivity", "🔍 Verificando TODOS los permisos...")
+
+        val hasDeviceAdmin = isDeviceAdminActive()
+        val hasOverlay = Settings.canDrawOverlays(this)
+        val hasUsageAccess = hasUsageAccess(this)
+        val isProblematicDevice = AutoStartHelper.isProblematicManufacturer()
+        val shouldShowAutoStart = AutoStartHelper.shouldShowAutoStartDialog(this)
+
+        android.util.Log.d("SplashActivity", """
+            Estado de permisos:
+            ✓ Device Admin: $hasDeviceAdmin
+            ✓ Overlay: $hasOverlay
+            ✓ Usage Access: $hasUsageAccess
+            ✓ Es dispositivo problemático: $isProblematicDevice
+            ✓ Debe mostrar auto-inicio: $shouldShowAutoStart
+        """.trimIndent())
+
+        // Verificar permisos en orden de prioridad
         when {
-            // 1. Verificar Device Admin primero
-            !isDeviceAdminActive() && !deviceAdminRequested -> {
-                showDeviceAdminDialog()
+            // 1. Device Admin es crítico - verificar primero
+            !hasDeviceAdmin -> {
+                android.util.Log.w("SplashActivity", "❌ Falta Device Admin - Solicitando...")
+                if (!deviceAdminRequested) {
+                    showDeviceAdminDialog()
+                    deviceAdminRequested = true
+                }
             }
 
-            // 2. Verificar permiso de overlay
-            !Settings.canDrawOverlays(this) && !overlayPermissionRequested -> {
-                showOverlayPermissionDialog()
+            // 2. Overlay es necesario para bloquear apps
+            !hasOverlay -> {
+                android.util.Log.w("SplashActivity", "❌ Falta Overlay - Solicitando...")
+                if (!overlayPermissionRequested) {
+                    showOverlayPermissionDialog()
+                    overlayPermissionRequested = true
+                }
             }
 
-            // 3. Verificar permiso de uso de apps
-            !hasUsageAccess(this) && !usageAccessRequested -> {
-                showUsageAccessDialog()
+            // 3. Usage Access para monitorear apps
+            !hasUsageAccess -> {
+                android.util.Log.w("SplashActivity", "❌ Falta Usage Access - Solicitando...")
+                if (!usageAccessRequested) {
+                    showUsageAccessDialog()
+                    usageAccessRequested = true
+                }
             }
 
-            // 4. Todos los permisos concedidos
-            Settings.canDrawOverlays(this) && hasUsageAccess(this) -> {
-                proceedToMainActivity()
+            // 4. Auto-inicio para dispositivos problemáticos (DESPUÉS de los otros permisos)
+            isProblematicDevice && shouldShowAutoStart -> {
+                android.util.Log.w("SplashActivity", "⚠️ Dispositivo problemático - Solicitando configuración de auto-inicio...")
+                showForceAutoStartDialog()
             }
 
-            // 5. Si faltan permisos después de solicitarlos, esperar a onResume
+            // 5. TODOS los permisos concedidos - Continuar a MainActivity
             else -> {
-                // No hacer nada, esperar a que el usuario conceda permisos
+                android.util.Log.d("SplashActivity", "✅ TODOS los permisos concedidos - Procediendo a MainActivity")
+                proceedToMainActivity()
             }
         }
     }
@@ -107,7 +158,6 @@ class SplashActivity : ComponentActivity() {
             try {
                 startService(Intent(this, AppBlockerOverlayService::class.java))
             } catch (e: Exception) {
-                // Manejar error si el servicio no puede iniciarse
                 e.printStackTrace()
             }
         }
@@ -118,7 +168,141 @@ class SplashActivity : ComponentActivity() {
         finish()
     }
 
+    /**
+     * Guarda el UUID de Google Auth e inicia el servicio de monitoreo
+     * Se ejecuta automáticamente al iniciar la app
+     */
+    private fun ensureUuidAndStartService() {
+        val dbUtils = DataBaseUtils(this)
+        val sharedPref = getSharedPreferences("preferences", MODE_PRIVATE)
+
+        // Obtener el UID del usuario autenticado de Google
+        val currentUser = dbUtils.auth.currentUser
+
+        if (currentUser != null) {
+            val googleUid = currentUser.uid
+
+            // Guardar el UID de Google en SharedPreferences
+            sharedPref.edit().apply {
+                putString("uuid", googleUid)
+                apply()
+            }
+
+            android.util.Log.d("SplashActivity", "✅ UUID de Google Auth guardado: $googleUid")
+            android.util.Log.d("SplashActivity", "Usuario: ${currentUser.displayName ?: currentUser.email}")
+
+            // Iniciar el servicio de monitoreo en segundo plano
+            startAppUsageMonitorService()
+        } else {
+            android.util.Log.w("SplashActivity", "⚠️ No hay usuario autenticado todavía")
+        }
+    }
+
+    /**
+     * Inicia el servicio de monitoreo de uso de apps en segundo plano
+     */
+    private fun startAppUsageMonitorService() {
+        try {
+            val serviceIntent = Intent(this, AppUsageMonitorService::class.java)
+            startService(serviceIntent)
+            android.util.Log.d("SplashActivity", "✅ Servicio de monitoreo iniciado automáticamente")
+        } catch (e: Exception) {
+            android.util.Log.e("SplashActivity", "❌ Error iniciando servicio de monitoreo", e)
+        }
+    }
+
+    /**
+     * Configura WorkManager para asegurar que los servicios se mantengan activos
+     */
+    private fun setupWorkManager() {
+        try {
+            val workRequest = PeriodicWorkRequestBuilder<StartupWorker>(
+                15, TimeUnit.MINUTES
+            ).build()
+
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                "service_monitor",
+                ExistingPeriodicWorkPolicy.KEEP,
+                workRequest
+            )
+
+            android.util.Log.d("SplashActivity", "✅ WorkManager configurado para monitorear servicios")
+        } catch (e: Exception) {
+            android.util.Log.e("SplashActivity", "❌ Error configurando WorkManager", e)
+        }
+    }
+
+    /**
+     * Muestra un diálogo que OBLIGA al usuario a configurar el auto-inicio
+     */
+    private fun showForceAutoStartDialog() {
+        val manufacturer = AutoStartHelper.getManufacturerName()
+
+        android.util.Log.d("SplashActivity", "📢 Mostrando diálogo OBLIGATORIO de auto-inicio para $manufacturer")
+
+        AlertDialog.Builder(this)
+            .setTitle("⚠️ Configuración OBLIGATORIA")
+            .setMessage("""
+                Tu dispositivo $manufacturer requiere configuración adicional para funcionar.
+                
+                📋 Debes realizar estos pasos:
+                
+                1️⃣ Toca "Ir a Configuración"
+                2️⃣ Busca "Control Parental"
+                3️⃣ Activa "Auto-inicio" o "Inicio automático"
+                4️⃣ Desactiva "Optimización de batería"
+                5️⃣ Vuelve a la app
+                
+                ⚠️ La app NO funcionará correctamente sin esta configuración.
+                
+                Esta configuración es necesaria para:
+                • Proteger a tus hijos 24/7
+                • Funcionar después de reiniciar
+                • Monitorear el uso de apps
+            """.trimIndent())
+            .setPositiveButton("Ir a Configuración") { dialog, _ ->
+                android.util.Log.d("SplashActivity", "👆 Usuario va a configurar auto-inicio")
+                dialog.dismiss()
+
+                val opened = AutoStartHelper.openAutoStartSettings(this)
+
+                if (!opened) {
+                    android.util.Log.w("SplashActivity", "⚠️ No se pudo abrir configuración específica, abriendo ajustes generales")
+                    openGeneralSettings()
+                } else {
+                    android.util.Log.d("SplashActivity", "✅ Configuración específica abierta")
+                }
+
+                AutoStartHelper.markAutoStartDialogShown(this)
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    /**
+     * Abre los ajustes generales de la app como fallback
+     */
+    private fun openGeneralSettings() {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+            android.util.Log.d("SplashActivity", "✅ Ajustes de la app abiertos")
+        } catch (e: Exception) {
+            android.util.Log.e("SplashActivity", "❌ Error abriendo ajustes", e)
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                startActivity(intent)
+            } catch (e2: Exception) {
+                android.util.Log.e("SplashActivity", "❌ Error abriendo ajustes generales", e2)
+            }
+        }
+    }
+
     private fun showDeviceAdminDialog() {
+        android.util.Log.d("SplashActivity", "📢 Mostrando diálogo de Device Admin")
+
         AlertDialog.Builder(this)
             .setTitle("Permisos de Administrador")
             .setMessage("Esta app necesita permisos de administrador del dispositivo para:\n\n" +
@@ -128,11 +312,11 @@ class SplashActivity : ComponentActivity() {
                     "Por favor, activa los permisos en la siguiente pantalla.")
             .setPositiveButton("Continuar") { dialog, _ ->
                 dialog.dismiss()
-                deviceAdminRequested = true
                 requestDeviceAdmin()
             }
             .setNegativeButton("Cancelar") { dialog, _ ->
                 dialog.dismiss()
+                android.util.Log.w("SplashActivity", "⚠️ Usuario canceló Device Admin - Cerrando app")
                 finish()
             }
             .setCancelable(false)
@@ -140,6 +324,8 @@ class SplashActivity : ComponentActivity() {
     }
 
     private fun showOverlayPermissionDialog() {
+        android.util.Log.d("SplashActivity", "📢 Mostrando diálogo de Overlay Permission")
+
         AlertDialog.Builder(this)
             .setTitle("Permiso de Superposición")
             .setMessage("Esta app necesita permiso para mostrarse sobre otras apps para:\n\n" +
@@ -153,6 +339,7 @@ class SplashActivity : ComponentActivity() {
             }
             .setNegativeButton("Cancelar") { dialog, _ ->
                 dialog.dismiss()
+                android.util.Log.w("SplashActivity", "⚠️ Usuario canceló Overlay - Cerrando app")
                 finish()
             }
             .setCancelable(false)
@@ -160,6 +347,8 @@ class SplashActivity : ComponentActivity() {
     }
 
     private fun showUsageAccessDialog() {
+        android.util.Log.d("SplashActivity", "📢 Mostrando diálogo de Usage Access")
+
         AlertDialog.Builder(this)
             .setTitle("Acceso de Uso de Apps")
             .setMessage("Esta app necesita acceso al uso de aplicaciones para:\n\n" +
@@ -173,9 +362,11 @@ class SplashActivity : ComponentActivity() {
             }
             .setNegativeButton("Cancelar") { dialog, _ ->
                 dialog.dismiss()
+                android.util.Log.w("SplashActivity", "⚠️ Usuario canceló Usage Access - Cerrando app")
                 finish()
             }
             .setCancelable(false)
             .show()
     }
 }
+
