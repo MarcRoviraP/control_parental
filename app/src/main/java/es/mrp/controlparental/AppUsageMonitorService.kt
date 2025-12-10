@@ -8,6 +8,7 @@ import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
@@ -140,34 +141,153 @@ class AppUsageMonitorService : Service() {
             val usageData = hashMapOf<String, Any>()
             val pm = packageManager
 
+            // IMPORTANTE: Usar el timestamp actual para saber cuándo se hizo esta captura
+            val captureTimestamp = System.currentTimeMillis()
+
             // Convertir las estadísticas de uso a un formato serializable
-            usageStatsList
+            // Agrupar por packageName y seleccionar la entrada con mayor totalTimeInForeground por paquete
+            val uniqueStats = usageStatsList
                 .filter { it.totalTimeInForeground > 0 }
+                .groupBy { it.packageName }
+                .mapNotNull { (_, list) -> list.maxByOrNull { it.totalTimeInForeground } }
                 .sortedByDescending { it.totalTimeInForeground }
-                .take(20) // Solo las 20 apps más usadas
-                .forEachIndexed { index, stat ->
-                    try {
-                        val appInfo = pm.getApplicationInfo(stat.packageName, 0)
-                        val appName = pm.getApplicationLabel(appInfo).toString()
+                .take(20) // Solo las 20 apps más usadas únicas por paquete
 
-                        usageData["app_$index"] = hashMapOf(
-                            "packageName" to stat.packageName,
-                            "appName" to appName,
-                            "timeInForeground" to stat.totalTimeInForeground,
-                            "lastTimeUsed" to stat.lastTimeUsed
-                        )
-                    } catch (e: PackageManager.NameNotFoundException) {
-                        Log.w(TAG, "App no encontrada: ${stat.packageName}")
+            uniqueStats.forEachIndexed { index, stat ->
+                try {
+                    // Filtrado: omitir paquetes no relevantes (sistema, launcher, ajustes, etc.)
+                    if (isExcludedPackage(pm, stat.packageName)) {
+                        Log.d(TAG, "Omitiendo paquete: ${stat.packageName}")
+                        return@forEachIndexed
                     }
-                }
 
-            // Subir a Firestore
+                    val appInfo = pm.getApplicationInfo(stat.packageName, 0)
+                    val appName = pm.getApplicationLabel(appInfo).toString()
+
+                    // Evitar nombres vacíos o nulos
+                    if (appName.isBlank()) {
+                        Log.d(TAG, "App con nombre vacío omitida: ${stat.packageName}")
+                        return@forEachIndexed
+                    }
+
+                    usageData["app_$index"] = hashMapOf(
+                        "packageName" to stat.packageName,
+                        "appName" to appName,
+                        "timeInForeground" to stat.totalTimeInForeground,
+                        "lastTimeUsed" to stat.lastTimeUsed,
+                        "capturedAt" to captureTimestamp // Timestamp de esta captura
+                    )
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.w(TAG, "App no encontrada: ${stat.packageName}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error procesando app ${stat.packageName}", e)
+                }
+            }
+
+            // Subir a Firestore con el timestamp de captura
             if (usageData.isNotEmpty()) {
+                usageData["lastCaptureTime"] = captureTimestamp // Para mostrar "última actualización"
                 dbUtils.uploadAppUsage(childUuid!!, usageData)
                 Log.d(TAG, "Datos de uso subidos: ${usageData.size} apps monitoreadas")
             }
         } else {
             Log.d(TAG, "No hay datos de uso para subir")
+        }
+    }
+
+    /**
+     * Decide si un paquete debe excluirse del reporte de uso.
+     * Omite apps de sistema puras, launcher (home), y paquetes explícitamente listados.
+     */
+    private fun isExcludedPackage(pm: PackageManager, packageName: String?): Boolean {
+        if (packageName == null) return true
+
+        // No reportar la propia app
+        if (packageName == applicationContext.packageName) return true
+
+        try {
+            val ai: ApplicationInfo = pm.getApplicationInfo(packageName, 0)
+
+            // Lista blanca: apps de sistema que SÍ queremos monitorear (aunque tengan FLAG_SYSTEM)
+            val whitelist = setOf(
+                "com.google.android.apps.photos",  // Google Fotos
+                "com.android.gallery3d",           // Galería AOSP
+                "com.miui.gallery",                // Galería MIUI
+                "com.coloros.gallery3d",           // Galería ColorOS (Oppo/Realme)
+                "com.oppo.gallery3d",              // Galería Oppo
+                "com.samsung.android.gallery3d",   // Galería Samsung
+                "com.sec.android.gallery3d",       // Galería Samsung alternativa
+                "com.android.camera",              // Cámara sistema
+                "com.android.camera2",             // Cámara alternativa
+                "com.google.android.GoogleCamera", // Google Camera
+                "com.android.contacts",            // Contactos
+                "com.android.mms",                 // Mensajes/SMS
+                "com.google.android.apps.messaging", // Mensajes Google
+                "com.android.phone",               // Teléfono
+                "com.google.android.dialer",       // Teléfono Google
+                "com.android.calculator2",         // Calculadora
+                "com.google.android.calculator",   // Calculadora Google
+                "com.android.calendar",            // Calendario
+                "com.google.android.calendar",     // Calendario Google
+                "com.android.email",               // Email
+                "com.google.android.gm",           // Gmail
+                "com.android.deskclock"            // Reloj/Alarmas
+            )
+
+            // Si está en la whitelist, SIEMPRE permitir (no excluir)
+            if (whitelist.contains(packageName)) {
+                Log.d(TAG, "✅ App en whitelist permitida: $packageName")
+                return false
+            }
+
+            // Omitir apps de sistema (no actualizadas) - PERO ya revisamos whitelist antes
+            val isSystem = (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            val isUpdatedSystem = (ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+            if (isSystem && !isUpdatedSystem) {
+                Log.d(TAG, "❌ App de sistema pura omitida: $packageName")
+                return true
+            }
+
+            // Omitir apps persistentes o con privilegios especiales
+            val isPersistent = (ai.flags and ApplicationInfo.FLAG_PERSISTENT) != 0
+            if (isPersistent) return true
+
+            // Omitir el launcher/Home
+            val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            val resolveInfo = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+            val homePkg = resolveInfo?.activityInfo?.packageName
+            if (packageName == homePkg) return true
+
+            // Lista negra de paquetes comunes que no aportan valor o son del sistema
+            val blacklist = setOf(
+                "com.android.settings",
+                "com.android.systemui",
+                "com.android.providers.settings",
+                "com.google.android.googlequicksearchbox", // launcher on some devices
+                "com.google.android.apps.nexuslauncher",
+                "com.miui.home",
+                "com.oppo.launcher",
+                "com.realme.launcher",
+                "com.coloros.launcher",
+                "com.samsung.android.launcher",
+                "com.sec.android.app.launcher",
+                "com.htc.launcher",
+                "com.microsoft.launcher"
+            )
+
+            if (blacklist.contains(packageName)) return true
+
+            // Omitir paquetes cuyo label o packageName parezcan contener "launcher" o "systemui" o "settings" o "setupwizard"
+            val lower = packageName.lowercase()
+            if (lower.contains("launcher") || lower.contains("systemui") || lower.contains("settings") || lower.contains("setupwizard")) {
+                return true
+            }
+
+            return false
+        } catch (e: PackageManager.NameNotFoundException) {
+            // Si no se encuentra la app en el PackageManager, omitirla para no subir basura
+            Log.w(TAG, "PackageManager: paquete no encontrado: $packageName")
+            return true
         }
     }
 

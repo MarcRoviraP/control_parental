@@ -78,6 +78,83 @@ class ParentAccountActivity : AppCompatActivity() {
             layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this@ParentAccountActivity)
             adapter = childUsageAdapter
         }
+
+        // Configurar listener para bloquear/desbloquear apps
+        childUsageAdapter.onAppLongClickListener = { childUuid, packageName, appName, _ ->
+            showBlockAppDialog(childUuid, packageName, appName)
+        }
+    }
+
+    /**
+     * Muestra un diálogo para bloquear o desbloquear una app
+     */
+    private fun showBlockAppDialog(childUuid: String, packageName: String, appName: String) {
+        // Primero verificar si ya está bloqueada
+        dbUtils.isAppBlocked(childUuid, packageName) { isBlocked ->
+            runOnUiThread {
+                val message = if (isBlocked) {
+                    "¿Desbloquear la app '$appName'?"
+                } else {
+                    "¿Bloquear la app '$appName'?"
+                }
+
+                val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(if (isBlocked) "Desbloquear App" else "Bloquear App")
+                    .setMessage(message)
+                    .setPositiveButton(if (isBlocked) "Desbloquear" else "Bloquear") { _, _ ->
+                        if (isBlocked) {
+                            unblockApp(childUuid, packageName, appName)
+                        } else {
+                            blockApp(childUuid, packageName, appName)
+                        }
+                    }
+                    .setNegativeButton("Cancelar", null)
+                    .create()
+
+                dialog.show()
+            }
+        }
+    }
+
+    /**
+     * Bloquea una app para un hijo
+     */
+    private fun blockApp(childUuid: String, packageName: String, appName: String) {
+        dbUtils.blockAppForChild(
+            childUuid = childUuid,
+            packageName = packageName,
+            appName = appName,
+            onSuccess = {
+                runOnUiThread {
+                    makeText(this, "App '$appName' bloqueada", LENGTH_SHORT).show()
+                }
+            },
+            onError = { error ->
+                runOnUiThread {
+                    makeText(this, "Error al bloquear: $error", LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+
+    /**
+     * Desbloquea una app para un hijo
+     */
+    private fun unblockApp(childUuid: String, packageName: String, appName: String) {
+        dbUtils.unblockAppForChild(
+            childUuid = childUuid,
+            packageName = packageName,
+            onSuccess = {
+                runOnUiThread {
+                    makeText(this, "App '$appName' desbloqueada", LENGTH_SHORT).show()
+                }
+            },
+            onError = { error ->
+                runOnUiThread {
+                    makeText(this, "Error al desbloquear: $error", LENGTH_SHORT).show()
+                }
+            }
+        )
     }
 
     /**
@@ -110,7 +187,12 @@ class ParentAccountActivity : AppCompatActivity() {
     private fun processChildUsageData(childUuid: String, usageData: Map<String, Any>) {
         // Convertir los datos de Firestore a la estructura de nuestra app
         val apps = mutableListOf<AppUsageInfo>()
-        val timestamp = usageData["timestamp"] as? Long ?: System.currentTimeMillis()
+        
+        // IMPORTANTE: Usar lastCaptureTime que es cuando el hijo capturó estos datos
+        // Esto hace que el timer "Hace Xs" sea consistente y no salte
+        val timestamp = usageData["lastCaptureTime"] as? Long 
+            ?: usageData["timestamp"] as? Long 
+            ?: System.currentTimeMillis()
 
         // Procesar cada app en los datos
         usageData.filter { it.key.startsWith("app_") }.forEach { (_, value) ->

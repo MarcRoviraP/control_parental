@@ -14,11 +14,67 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
 
     private val childrenList = mutableListOf<ChildUsageData>()
 
+    // Callback para manejar clics en apps (bloquear/desbloquear)
+    var onAppLongClickListener: ((childUuid: String, packageName: String, appName: String, isBlocked: Boolean) -> Unit)? = null
+
     class ChildViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val childNameTextView: TextView = itemView.findViewById(R.id.childNameTextView)
         val lastUpdateTextView: TextView = itemView.findViewById(R.id.lastUpdateTextView)
         val appsCountTextView: TextView = itemView.findViewById(R.id.appsCountTextView)
         val appsRecyclerView: RecyclerView = itemView.findViewById(R.id.appsRecyclerView)
+
+        // Runnable que actualiza la vista de tiempo cada segundo
+        private var timeUpdater: Runnable? = null
+        private var currentTimestamp: Long = 0
+
+        fun startUpdatingTime(timestamp: Long) {
+            // Si el timestamp no ha cambiado, no reiniciar el updater
+            if (currentTimestamp == timestamp && timeUpdater != null) {
+                return
+            }
+
+            currentTimestamp = timestamp
+
+            // Asegurar que no haya otro runnable corriendo
+            stopUpdatingTime()
+
+            // Actualizar el texto inmediatamente
+            fun buildText(): String {
+                val timeAgo = System.currentTimeMillis() - currentTimestamp
+                val secondsAgo = timeAgo / 1000
+                return when {
+                    secondsAgo < 60 -> "Hace ${secondsAgo}s"
+                    secondsAgo < 3600 -> "Hace ${secondsAgo / 60}m"
+                    secondsAgo < 86400 -> "Hace ${secondsAgo / 3600}h"
+                    else -> "Hace ${secondsAgo / 86400}d"
+                }
+            }
+
+            // Aplicar texto inicial
+            lastUpdateTextView.text = buildText()
+
+            timeUpdater = object : Runnable {
+                override fun run() {
+                    val newText = buildText()
+                    // Sólo setText si ha cambiado el texto mostrado (reduce relayouts)
+                    if (lastUpdateTextView.text.toString() != newText) {
+                        lastUpdateTextView.text = newText
+                    }
+                    // Volver a postear dentro de 1s
+                    itemView.postDelayed(this, 1000)
+                }
+            }
+
+            // Lanzar el updater después de 1 segundo
+            itemView.postDelayed(timeUpdater, 1000)
+        }
+
+        fun stopUpdatingTime() {
+            timeUpdater?.let {
+                itemView.removeCallbacks(it)
+                timeUpdater = null
+            }
+        }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ChildViewHolder {
@@ -34,22 +90,39 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
         holder.childNameTextView.text = "Hijo ${position + 1}"
         holder.appsCountTextView.text = "${childData.apps.size} apps"
 
-        // Calcular tiempo desde última actualización
-        val timeAgo = System.currentTimeMillis() - childData.timestamp
-        val secondsAgo = timeAgo / 1000
-        holder.lastUpdateTextView.text = when {
-            secondsAgo < 60 -> "Hace ${secondsAgo}s"
-            secondsAgo < 3600 -> "Hace ${secondsAgo / 60}m"
-            else -> "Hace ${secondsAgo / 3600}h"
-        }
+        // Iniciar actualización activa del tiempo desde última actualización
+        holder.startUpdatingTime(childData.timestamp)
 
-        // Configurar RecyclerView de apps
-        val appsAdapter = AppUsageAdapter(childData.apps)
-        holder.appsRecyclerView.layoutManager = LinearLayoutManager(holder.itemView.context)
-        holder.appsRecyclerView.adapter = appsAdapter
+        // Configurar RecyclerView de apps (solo si no tiene adapter o cambió el contenido)
+        if (holder.appsRecyclerView.adapter == null) {
+            holder.appsRecyclerView.layoutManager = LinearLayoutManager(holder.itemView.context)
+            val appsAdapter = AppUsageAdapter(childData.apps)
+
+            // Configurar listener para clics largos en apps
+            appsAdapter.onAppLongClickListener = { packageName, appName ->
+                // TODO: Verificar si está bloqueada primero
+                onAppLongClickListener?.invoke(childData.childUuid, packageName, appName, false)
+            }
+
+            holder.appsRecyclerView.adapter = appsAdapter
+        } else {
+            val appsAdapter = holder.appsRecyclerView.adapter as? AppUsageAdapter
+            appsAdapter?.updateApps(childData.apps)
+
+            // Actualizar listener también
+            appsAdapter?.onAppLongClickListener = { packageName, appName ->
+                onAppLongClickListener?.invoke(childData.childUuid, packageName, appName, false)
+            }
+        }
     }
 
     override fun getItemCount(): Int = childrenList.size
+
+    override fun onViewRecycled(holder: ChildViewHolder) {
+        // Parar el updater para evitar callbacks cuando la vista ya no está en pantalla
+        holder.stopUpdatingTime()
+        super.onViewRecycled(holder)
+    }
 
     /**
      * Actualiza o agrega los datos de un hijo
@@ -65,8 +138,13 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
 
         if (existingIndex != -1) {
             // Actualizar datos existentes
+            val oldData = childrenList[existingIndex]
             childrenList[existingIndex] = childData
-            notifyItemChanged(existingIndex)
+
+            // Solo notificar cambio si realmente cambió el timestamp o las apps
+            if (oldData.timestamp != childData.timestamp || oldData.apps != childData.apps) {
+                notifyItemChanged(existingIndex, childData) // Usar payload para evitar rebindeo completo
+            }
         } else {
             // Agregar nuevo hijo
             childrenList.add(childData)
@@ -74,12 +152,29 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
         }
     }
 
+    override fun onBindViewHolder(holder: ChildViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isEmpty()) {
+            // Rebindeo completo
+            onBindViewHolder(holder, position)
+        } else {
+            // Actualización parcial con payload
+            val childData = payloads[0] as ChildUsageData
+
+            holder.appsCountTextView.text = "${childData.apps.size} apps"
+            holder.startUpdatingTime(childData.timestamp)
+            (holder.appsRecyclerView.adapter as? AppUsageAdapter)?.updateApps(childData.apps)
+        }
+    }
+
     /**
      * Limpia todos los datos
      */
     fun clearData() {
+        // Al limpiar, asegurarse de que no queden runnables activos en ViewHolders visibles
+        for (i in 0 until itemCount) {
+            // No es trivial acceder a ViewHolder por índice desde aquí; dejar a RecyclerView gestionar recicled views.
+        }
         childrenList.clear()
         notifyDataSetChanged()
     }
 }
-

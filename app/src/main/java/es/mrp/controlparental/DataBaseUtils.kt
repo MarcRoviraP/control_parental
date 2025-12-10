@@ -12,6 +12,7 @@ class DataBaseUtils(context: Context) {
     val collectionFamilia = "familia"
     val collectionQrContent = "qrContent"
     val collectionAppUsage = "appUsage"
+    val collectionBlockedApps = "blockedApps"
     var auth = Firebase.auth
     var credentialManager = CredentialManager.create(context)
 
@@ -265,5 +266,126 @@ class DataBaseUtils(context: Context) {
         // Firebase Auth no permite obtener información de otros usuarios directamente
         // Por ahora devolvemos "Hijo" pero podríamos guardarlo en Firestore
         callback("Hijo")
+    }
+
+    /**
+     * Bloquea una app para un hijo específico
+     * @param childUuid UUID del hijo
+     * @param packageName Nombre del paquete de la app a bloquear
+     * @param appName Nombre legible de la app
+     * @param onSuccess Callback cuando se bloquea exitosamente
+     * @param onError Callback cuando hay un error
+     */
+    fun blockAppForChild(
+        childUuid: String,
+        packageName: String,
+        appName: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val blockData = hashMapOf(
+            "childUID" to childUuid,
+            "packageName" to packageName,
+            "appName" to appName,
+            "blockedAt" to System.currentTimeMillis(),
+            "isBlocked" to true
+        )
+
+        // Usar childUuid_packageName como ID del documento para evitar duplicados
+        val documentId = "${childUuid}_${packageName}"
+
+        db.collection(collectionBlockedApps)
+            .document(documentId)
+            .set(blockData)
+            .addOnSuccessListener {
+                Log.d("FIRESTORE", "App bloqueada: $appName para hijo $childUuid")
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error bloqueando app", e)
+                onError(e.message ?: "Error desconocido")
+            }
+    }
+
+    /**
+     * Desbloquea una app para un hijo específico
+     * @param childUuid UUID del hijo
+     * @param packageName Nombre del paquete de la app a desbloquear
+     * @param onSuccess Callback cuando se desbloquea exitosamente
+     * @param onError Callback cuando hay un error
+     */
+    fun unblockAppForChild(
+        childUuid: String,
+        packageName: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val documentId = "${childUuid}_${packageName}"
+
+        db.collection(collectionBlockedApps)
+            .document(documentId)
+            .delete()
+            .addOnSuccessListener {
+                Log.d("FIRESTORE", "App desbloqueada: $packageName para hijo $childUuid")
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error desbloqueando app", e)
+                onError(e.message ?: "Error desconocido")
+            }
+    }
+
+    /**
+     * Escucha en tiempo real los cambios en las apps bloqueadas para un hijo
+     * @param childUuid UUID del hijo
+     * @param onUpdate Callback que se ejecuta cuando hay cambios en la lista de apps bloqueadas
+     */
+    fun listenToBlockedApps(
+        childUuid: String,
+        onUpdate: (List<String>) -> Unit
+    ) {
+        db.collection(collectionBlockedApps)
+            .whereEqualTo("childUID", childUuid)
+            .whereEqualTo("isBlocked", true)
+            .addSnapshotListener { snapshots, error ->
+                if (error != null) {
+                    Log.w("FIRESTORE", "Error escuchando apps bloqueadas", error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshots != null) {
+                    val blockedPackages = snapshots.mapNotNull { doc ->
+                        doc.getString("packageName")
+                    }
+                    Log.d("FIRESTORE", "Apps bloqueadas actualizadas para hijo $childUuid: ${blockedPackages.size}")
+                    onUpdate(blockedPackages)
+                }
+            }
+    }
+
+    /**
+     * Verifica si una app específica está bloqueada para un hijo
+     * @param childUuid UUID del hijo
+     * @param packageName Nombre del paquete a verificar
+     * @param callback Callback con true si está bloqueada, false si no
+     */
+    fun isAppBlocked(
+        childUuid: String,
+        packageName: String,
+        callback: (Boolean) -> Unit
+    ) {
+        val documentId = "${childUuid}_${packageName}"
+
+        db.collection(collectionBlockedApps)
+            .document(documentId)
+            .get()
+            .addOnSuccessListener { document ->
+                val isBlocked = document.exists() && document.getBoolean("isBlocked") == true
+                callback(isBlocked)
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error verificando si app está bloqueada", e)
+                callback(false)
+            }
     }
 }
