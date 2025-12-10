@@ -35,6 +35,7 @@ class AppUsageMonitorService : Service() {
         private const val PREFS_NAME = "preferences"
         private const val UUID_KEY = "uuid"
         private const val UPDATE_INTERVAL = 30000L // 30 segundos
+        private const val INSTALLED_APPS_UPDATE_INTERVAL = 300000L // 5 minutos para apps instaladas
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "app_usage_monitor_channel"
     }
@@ -61,6 +62,13 @@ class AppUsageMonitorService : Service() {
 
         if (childUuid != null) {
             Log.d(TAG, "✅ UUID encontrado: $childUuid - Iniciando monitoreo")
+
+            // Enviar apps instaladas inmediatamente
+            uploadInstalledApps()
+
+            // Iniciar monitoreo periódico de apps instaladas
+            startInstalledAppsMonitoring()
+
             startMonitoring()
         } else {
             Log.w(TAG, "⚠️ No se encontró UUID del hijo, no se puede monitorear")
@@ -122,6 +130,54 @@ class AppUsageMonitorService : Service() {
                     delay(UPDATE_INTERVAL)
                 }
             }
+        }
+    }
+
+    /**
+     * Inicia el monitoreo periódico de apps instaladas
+     */
+    private fun startInstalledAppsMonitoring() {
+        serviceScope.launch {
+            while (true) {
+                try {
+                    delay(INSTALLED_APPS_UPDATE_INTERVAL)
+                    uploadInstalledApps()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error actualizando apps instaladas", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Obtiene y sube la lista de apps instaladas a Firestore
+     */
+    private fun uploadInstalledApps() {
+        if (childUuid == null) return
+
+        try {
+            val pm = packageManager
+            val installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                .filter { appInfo ->
+                    // Filtrar solo apps que no sean del sistema o que hayan sido actualizadas
+                    val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    val isUpdatedSystem = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                    !isSystem || isUpdatedSystem
+                }
+                .associate { appInfo ->
+                    val packageName = appInfo.packageName
+                    val appName = pm.getApplicationLabel(appInfo).toString()
+                    packageName to appName
+                }
+                .toMutableMap()
+
+            // Filtrar la propia app de control parental
+            installedApps.remove(applicationContext.packageName)
+
+            Log.d(TAG, "📦 Apps instaladas detectadas: ${installedApps.size}")
+            dbUtils.uploadInstalledApps(childUuid!!, installedApps)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error obteniendo apps instaladas", e)
         }
     }
 

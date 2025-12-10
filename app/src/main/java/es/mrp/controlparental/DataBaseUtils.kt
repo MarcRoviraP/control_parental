@@ -364,6 +364,32 @@ class DataBaseUtils(context: Context) {
     }
 
     /**
+     * Obtiene la lista de apps bloqueadas para un hijo (sin listener en tiempo real)
+     * @param childUuid UUID del hijo
+     * @param callback Callback con la lista de paquetes bloqueados
+     */
+    fun getBlockedAppsForChild(
+        childUuid: String,
+        callback: (List<String>) -> Unit
+    ) {
+        db.collection(collectionBlockedApps)
+            .whereEqualTo("childUID", childUuid)
+            .whereEqualTo("isBlocked", true)
+            .get()
+            .addOnSuccessListener { documents ->
+                val blockedPackages = documents.mapNotNull { doc ->
+                    doc.getString("packageName")
+                }
+                Log.d("FIRESTORE", "Apps bloqueadas obtenidas para hijo $childUuid: ${blockedPackages.size}")
+                callback(blockedPackages)
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error obteniendo apps bloqueadas", e)
+                callback(emptyList())
+            }
+    }
+
+    /**
      * Verifica si una app específica está bloqueada para un hijo
      * @param childUuid UUID del hijo
      * @param packageName Nombre del paquete a verificar
@@ -386,6 +412,84 @@ class DataBaseUtils(context: Context) {
             .addOnFailureListener { e ->
                 Log.w("FIRESTORE", "Error verificando si app está bloqueada", e)
                 callback(false)
+            }
+    }
+
+    /**
+     * Sube la lista de apps instaladas del hijo a Firestore
+     * @param childUuid UUID del hijo
+     * @param installedApps Lista de apps instaladas (packageName -> appName)
+     */
+    fun uploadInstalledApps(childUuid: String, installedApps: Map<String, String>) {
+        val data = hashMapOf<String, Any>(
+            "childUID" to childUuid,
+            "timestamp" to System.currentTimeMillis(),
+            "apps" to installedApps
+        )
+
+        db.collection("installedApps")
+            .document(childUuid)
+            .set(data)
+            .addOnSuccessListener {
+                Log.d("FIRESTORE", "Apps instaladas subidas para hijo: $childUuid (${installedApps.size} apps)")
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error subiendo apps instaladas", e)
+            }
+    }
+
+    /**
+     * Obtiene la lista de apps instaladas de un hijo
+     * @param childUuid UUID del hijo
+     * @param callback Callback con el mapa de apps (packageName -> appName)
+     */
+    fun getInstalledApps(
+        childUuid: String,
+        callback: (Map<String, String>) -> Unit
+    ) {
+        db.collection("installedApps")
+            .document(childUuid)
+            .get()
+            .addOnSuccessListener { document ->
+                if (document.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val apps = document.get("apps") as? Map<String, String> ?: emptyMap()
+                    Log.d("FIRESTORE", "Apps instaladas obtenidas para hijo: $childUuid (${apps.size} apps)")
+                    callback(apps)
+                } else {
+                    Log.w("FIRESTORE", "No hay apps instaladas para el hijo: $childUuid")
+                    callback(emptyMap())
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error obteniendo apps instaladas", e)
+                callback(emptyMap())
+            }
+    }
+
+    /**
+     * Escucha cambios en las apps instaladas de un hijo en tiempo real
+     * @param childUuid UUID del hijo
+     * @param onUpdate Callback que se ejecuta cuando hay cambios
+     */
+    fun listenToInstalledApps(
+        childUuid: String,
+        onUpdate: (Map<String, String>) -> Unit
+    ) {
+        db.collection("installedApps")
+            .document(childUuid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w("FIRESTORE", "Error escuchando apps instaladas", error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshot != null && snapshot.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val apps = snapshot.get("apps") as? Map<String, String> ?: emptyMap()
+                    Log.d("FIRESTORE", "Apps instaladas actualizadas: $childUuid (${apps.size} apps)")
+                    onUpdate(apps)
+                }
             }
     }
 }

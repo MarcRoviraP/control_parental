@@ -24,7 +24,6 @@ class QRDialog : DialogFragment() {
         private const val PREFS_NAME = "preferences"
         private const val UUID_KEY = "uuid"
         private const val QR_SIZE = 512
-        private const val QR_SEPARATOR = "||"
 
         /**
          * Método factory para crear una instancia del diálogo con DataBaseUtils
@@ -86,7 +85,6 @@ class QRDialog : DialogFragment() {
             Log.e(TAG, "No hay usuario autenticado de Google")
         }
 
-        val timestamp = getGlobalTimestamp()
 
         // Guardar en Firestore si dbUtils está disponible
         dbUtils?.let { db ->
@@ -101,7 +99,7 @@ class QRDialog : DialogFragment() {
             }
         } ?: Log.w(TAG, "DataBaseUtils no está disponible")
 
-        return "$uuid$QR_SEPARATOR$timestamp"
+        return "$uuid"
     }
 
     private fun generateQRCode(content: String, size: Int = QR_SIZE): Bitmap? {

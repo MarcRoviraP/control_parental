@@ -3,6 +3,7 @@ package es.mrp.controlparental
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -14,14 +15,15 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
 
     private val childrenList = mutableListOf<ChildUsageData>()
 
-    // Callback para manejar clics en apps (bloquear/desbloquear)
-    var onAppLongClickListener: ((childUuid: String, packageName: String, appName: String, isBlocked: Boolean) -> Unit)? = null
+    // Callback para abrir la activity de gestión de apps bloqueadas
+    var onManageBlockedAppsClick: ((childUuid: String) -> Unit)? = null
 
     class ChildViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val childNameTextView: TextView = itemView.findViewById(R.id.childNameTextView)
         val lastUpdateTextView: TextView = itemView.findViewById(R.id.lastUpdateTextView)
         val appsCountTextView: TextView = itemView.findViewById(R.id.appsCountTextView)
         val appsRecyclerView: RecyclerView = itemView.findViewById(R.id.appsRecyclerView)
+        val manageAppsButton: Button = itemView.findViewById(R.id.manageAppsButton)
 
         // Runnable que actualiza la vista de tiempo cada segundo
         private var timeUpdater: Runnable? = null
@@ -93,26 +95,20 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
         // Iniciar actualización activa del tiempo desde última actualización
         holder.startUpdatingTime(childData.timestamp)
 
+        // Configurar botón para gestionar apps bloqueadas
+        holder.manageAppsButton.setOnClickListener {
+            onManageBlockedAppsClick?.invoke(childData.childUuid)
+        }
+
         // Configurar RecyclerView de apps (solo si no tiene adapter o cambió el contenido)
         if (holder.appsRecyclerView.adapter == null) {
             holder.appsRecyclerView.layoutManager = LinearLayoutManager(holder.itemView.context)
             val appsAdapter = AppUsageAdapter(childData.apps)
 
-            // Configurar listener para clics largos en apps
-            appsAdapter.onAppLongClickListener = { packageName, appName ->
-                // TODO: Verificar si está bloqueada primero
-                onAppLongClickListener?.invoke(childData.childUuid, packageName, appName, false)
-            }
-
             holder.appsRecyclerView.adapter = appsAdapter
         } else {
             val appsAdapter = holder.appsRecyclerView.adapter as? AppUsageAdapter
             appsAdapter?.updateApps(childData.apps)
-
-            // Actualizar listener también
-            appsAdapter?.onAppLongClickListener = { packageName, appName ->
-                onAppLongClickListener?.invoke(childData.childUuid, packageName, appName, false)
-            }
         }
     }
 

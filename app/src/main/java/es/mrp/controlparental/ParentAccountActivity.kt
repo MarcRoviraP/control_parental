@@ -79,82 +79,19 @@ class ParentAccountActivity : AppCompatActivity() {
             adapter = childUsageAdapter
         }
 
-        // Configurar listener para bloquear/desbloquear apps
-        childUsageAdapter.onAppLongClickListener = { childUuid, packageName, appName, _ ->
-            showBlockAppDialog(childUuid, packageName, appName)
+        // Configurar listener para abrir la activity de gestión de apps bloqueadas
+        childUsageAdapter.onManageBlockedAppsClick = { childUuid ->
+            openBlockedAppsActivity(childUuid)
         }
     }
 
     /**
-     * Muestra un diálogo para bloquear o desbloquear una app
+     * Abre la activity de gestión de apps bloqueadas para un hijo específico
      */
-    private fun showBlockAppDialog(childUuid: String, packageName: String, appName: String) {
-        // Primero verificar si ya está bloqueada
-        dbUtils.isAppBlocked(childUuid, packageName) { isBlocked ->
-            runOnUiThread {
-                val message = if (isBlocked) {
-                    "¿Desbloquear la app '$appName'?"
-                } else {
-                    "¿Bloquear la app '$appName'?"
-                }
-
-                val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle(if (isBlocked) "Desbloquear App" else "Bloquear App")
-                    .setMessage(message)
-                    .setPositiveButton(if (isBlocked) "Desbloquear" else "Bloquear") { _, _ ->
-                        if (isBlocked) {
-                            unblockApp(childUuid, packageName, appName)
-                        } else {
-                            blockApp(childUuid, packageName, appName)
-                        }
-                    }
-                    .setNegativeButton("Cancelar", null)
-                    .create()
-
-                dialog.show()
-            }
-        }
-    }
-
-    /**
-     * Bloquea una app para un hijo
-     */
-    private fun blockApp(childUuid: String, packageName: String, appName: String) {
-        dbUtils.blockAppForChild(
-            childUuid = childUuid,
-            packageName = packageName,
-            appName = appName,
-            onSuccess = {
-                runOnUiThread {
-                    makeText(this, "App '$appName' bloqueada", LENGTH_SHORT).show()
-                }
-            },
-            onError = { error ->
-                runOnUiThread {
-                    makeText(this, "Error al bloquear: $error", LENGTH_SHORT).show()
-                }
-            }
-        )
-    }
-
-    /**
-     * Desbloquea una app para un hijo
-     */
-    private fun unblockApp(childUuid: String, packageName: String, appName: String) {
-        dbUtils.unblockAppForChild(
-            childUuid = childUuid,
-            packageName = packageName,
-            onSuccess = {
-                runOnUiThread {
-                    makeText(this, "App '$appName' desbloqueada", LENGTH_SHORT).show()
-                }
-            },
-            onError = { error ->
-                runOnUiThread {
-                    makeText(this, "Error al desbloquear: $error", LENGTH_SHORT).show()
-                }
-            }
-        )
+    private fun openBlockedAppsActivity(childUuid: String) {
+        val intent = android.content.Intent(this, BlockedAppsActivity::class.java)
+        intent.putExtra(BlockedAppsActivity.EXTRA_CHILD_UUID, childUuid)
+        startActivity(intent)
     }
 
     /**
