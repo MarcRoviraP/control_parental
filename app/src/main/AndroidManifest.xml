@@ -19,7 +19,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+
 
     <application
         android:allowBackup="true"
@@ -34,6 +34,10 @@
         <activity
             android:name=".ParentAccountActivity"
             android:exported="false" />
+        <activity
+            android:name=".TimeLimitsActivity"
+            android:exported="false"
+            android:parentActivityName=".ParentAccountActivity" />
         <activity
             android:name=".BlockedAppsActivity"
             android:exported="false"

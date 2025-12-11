@@ -18,12 +18,16 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
     // Callback para abrir la activity de gestión de apps bloqueadas
     var onManageBlockedAppsClick: ((childUuid: String) -> Unit)? = null
 
+    // Callback para abrir la activity de gestión de límites de tiempo
+    var onManageTimeLimitsClick: ((childUuid: String) -> Unit)? = null
+
     class ChildViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val childNameTextView: TextView = itemView.findViewById(R.id.childNameTextView)
         val lastUpdateTextView: TextView = itemView.findViewById(R.id.lastUpdateTextView)
         val appsCountTextView: TextView = itemView.findViewById(R.id.appsCountTextView)
         val appsRecyclerView: RecyclerView = itemView.findViewById(R.id.appsRecyclerView)
         val manageAppsButton: Button = itemView.findViewById(R.id.manageAppsButton)
+        val manageTimeLimitsButton: Button = itemView.findViewById(R.id.manageTimeLimitsButton)
 
         // Runnable que actualiza la vista de tiempo cada segundo
         private var timeUpdater: Runnable? = null
@@ -98,6 +102,11 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
         // Configurar botón para gestionar apps bloqueadas
         holder.manageAppsButton.setOnClickListener {
             onManageBlockedAppsClick?.invoke(childData.childUuid)
+        }
+
+        // Configurar botón para gestionar límites de tiempo
+        holder.manageTimeLimitsButton.setOnClickListener {
+            onManageTimeLimitsClick?.invoke(childData.childUuid)
         }
 
         // Configurar RecyclerView de apps (solo si no tiene adapter o cambió el contenido)

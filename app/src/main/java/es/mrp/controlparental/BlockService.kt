@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.Service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
-import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -39,6 +38,15 @@ class AppBlockerOverlayService : Service() {
     private var overlayShowTime: Long = 0
     private var autoRemoveRunnable: Runnable? = null
 
+    // Variables para límites de tiempo
+    private val timeLimits = mutableMapOf<String, TimeLimit>()
+    private val dailyUsage = mutableMapOf<String, Long>()
+    private var globalTimeLimit: TimeLimit? = null
+    private var globalDailyUsage: Long = 0L
+    private var currentForegroundApp: String? = null
+    private var foregroundAppStartTime: Long = 0L
+    private val updateUsageInterval = 60000L
+
     companion object {
         private const val TAG = "AppBlockerService"
         private const val PREFS_NAME = "preferences"
@@ -58,38 +66,163 @@ class AppBlockerOverlayService : Service() {
         childUuid = sharedPref.getString(UUID_KEY, null)
 
         if (childUuid != null) {
-            Log.d(TAG, "✅ UUID encontrado: $childUuid - Iniciando escucha de apps bloqueadas")
+            Log.d(TAG, "✅ UUID encontrado: $childUuid - Iniciando monitoreo completo")
             startListeningToBlockedApps()
+            startListeningToTimeLimits()
+            loadTodayUsage()
         } else {
-            Log.w(TAG, "⚠️ No se encontró UUID del hijo, no se pueden bloquear apps")
+            Log.w(TAG, "⚠️ No se encontró UUID del hijo")
         }
 
         startForegroundServiceWithNotification()
 
         handler.postDelayed({
-            Log.d(TAG, "🔍 Verificación inicial de app en primer plano tras inicio del servicio")
+            Log.d(TAG, "🔍 Verificación inicial de app en primer plano")
             checkForegroundAppWithFallback()
         }, 500)
 
         handler.post(checkRunnable)
+        handler.post(usageUpdateRunnable)
     }
 
     private fun startListeningToBlockedApps() {
-        childUuid?.let { uuid: String ->
-            dbUtils.listenToBlockedApps(uuid, object : (List<String>) -> Unit {
-                override fun invoke(blockedPackages: List<String>) {
-                    blockedApps.clear()
-                    blockedApps.addAll(blockedPackages)
-                    Log.d(TAG, "📝 Apps bloqueadas actualizadas: ${blockedApps.size} apps")
-                    Log.d(TAG, "Apps: ${blockedApps.joinToString(", ")}")
+        childUuid?.let { uuid ->
+            dbUtils.listenToBlockedApps(uuid) { blockedPackages ->
+                blockedApps.clear()
+                blockedApps.addAll(blockedPackages)
+                Log.d(TAG, "📝 Apps bloqueadas: ${blockedApps.size}")
+                handler.post { checkForegroundAppWithFallback() }
+            }
+        }
+    }
 
-                    handler.post {
-                        Log.d(TAG, "🔍 Verificando app actual tras actualización de lista")
-                        checkForegroundAppWithFallback()
+    private fun startListeningToTimeLimits() {
+        childUuid?.let { uuid ->
+            dbUtils.listenToTimeLimits(uuid) { limits ->
+                timeLimits.clear()
+                for (limit in limits) {
+                    if (limit.packageName.isEmpty()) {
+                        globalTimeLimit = limit
+                        Log.d(TAG, "⏰ Límite global: ${limit.dailyLimitMinutes} min")
+                    } else {
+                        timeLimits[limit.packageName] = limit
+                        Log.d(TAG, "⏰ Límite ${limit.appName}: ${limit.dailyLimitMinutes} min")
                     }
                 }
-            })
+            }
         }
+    }
+
+    private fun loadTodayUsage() {
+        val today = getCurrentDate()
+        childUuid?.let { uuid ->
+            dbUtils.listenToDailyUsage(uuid, today) { usageMap ->
+                dailyUsage.clear()
+                var totalUsage = 0L
+                for ((packageName, usage) in usageMap) {
+                    if (packageName.isEmpty()) {
+                        globalDailyUsage = usage
+                    } else {
+                        dailyUsage[packageName] = usage
+                        totalUsage += usage
+                    }
+                }
+                if (globalDailyUsage == 0L && totalUsage > 0L) {
+                    globalDailyUsage = totalUsage
+                }
+                Log.d(TAG, "📊 Uso diario cargado: ${globalDailyUsage / 60000} min totales")
+            }
+        }
+    }
+
+    private val checkRunnable = object : Runnable {
+        override fun run() {
+            try {
+                checkForegroundApp()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error: ${e.message}")
+            } finally {
+                handler.postDelayed(this, checkInterval)
+            }
+        }
+    }
+
+    private val usageUpdateRunnable = object : Runnable {
+        override fun run() {
+            updateCurrentAppUsage()
+            handler.postDelayed(this, updateUsageInterval)
+        }
+    }
+
+    private fun updateCurrentAppUsage() {
+        val currentApp = currentForegroundApp
+        if (currentApp != null && foregroundAppStartTime > 0) {
+            val currentTime = System.currentTimeMillis()
+            val sessionTime = currentTime - foregroundAppStartTime
+
+            val previousUsage = dailyUsage[currentApp] ?: 0L
+            val newUsage = previousUsage + sessionTime
+            dailyUsage[currentApp] = newUsage
+
+            globalDailyUsage += sessionTime
+            foregroundAppStartTime = currentTime
+
+            val today = getCurrentDate()
+            childUuid?.let { uuid ->
+                dbUtils.updateDailyUsage(uuid, currentApp, today, newUsage)
+                dbUtils.updateDailyUsage(uuid, "", today, globalDailyUsage)
+            }
+
+            Log.d(TAG, "📊 Uso: $currentApp = ${newUsage / 60000}min, Global = ${globalDailyUsage / 60000}min")
+
+            if (isTimeLimitExceeded(currentApp)) {
+                Log.w(TAG, "⚠️ Límite excedido detectado")
+                blockApp(currentApp)
+            }
+        }
+    }
+
+    private fun getCurrentDate(): String {
+        val calendar = java.util.Calendar.getInstance()
+        return String.format("%04d-%02d-%02d",
+            calendar.get(java.util.Calendar.YEAR),
+            calendar.get(java.util.Calendar.MONTH) + 1,
+            calendar.get(java.util.Calendar.DAY_OF_MONTH)
+        )
+    }
+
+    private fun trackAppChange(newApp: String?) {
+        if (currentForegroundApp != null && currentForegroundApp != newApp) {
+            updateCurrentAppUsage()
+        }
+        currentForegroundApp = newApp
+        foregroundAppStartTime = System.currentTimeMillis()
+        Log.d(TAG, "📱 App: $newApp")
+    }
+
+    private fun isTimeLimitExceeded(packageName: String): Boolean {
+        globalTimeLimit?.let { limit ->
+            if (limit.enabled) {
+                val limitMillis = limit.dailyLimitMinutes * 60000L
+                if (globalDailyUsage >= limitMillis) {
+                    Log.d(TAG, "⏰ Límite global excedido")
+                    return true
+                }
+            }
+        }
+
+        timeLimits[packageName]?.let { limit ->
+            if (limit.enabled) {
+                val usage = dailyUsage[packageName] ?: 0L
+                val limitMillis = limit.dailyLimitMinutes * 60000L
+                if (usage >= limitMillis) {
+                    Log.d(TAG, "⏰ Límite ${limit.appName} excedido")
+                    return true
+                }
+            }
+        }
+
+        return false
     }
 
     private fun startForegroundServiceWithNotification() {
@@ -115,36 +248,19 @@ class AppBlockerOverlayService : Service() {
         startForeground(1, notification)
     }
 
-    private val checkRunnable = object : Runnable {
-        override fun run() {
-            try {
-                checkForegroundApp()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error: ${e.message}")
-            } finally {
-                handler.postDelayed(this, checkInterval)
-            }
-        }
-    }
-
     private fun checkForegroundAppWithFallback() {
         var packageName = getForegroundAppFromUsageStats()
 
         if (packageName == null) {
             packageName = getForegroundAppFromActivityManager()
-            if (packageName != null) {
-                Log.d(TAG, "📱 App detectada usando ActivityManager: $packageName")
-            }
         }
 
         if (packageName != null) {
-            Log.d(TAG, "🔎 App actual: $packageName")
             if (blockedApps.contains(packageName)) {
-                Log.d(TAG, "⚠️ App bloqueada detectada: $packageName")
                 blockApp(packageName)
+            } else {
+                trackAppChange(packageName)
             }
-        } else {
-            Log.d(TAG, "⚠️ No se pudo detectar ninguna app en primer plano")
         }
     }
 
@@ -185,7 +301,7 @@ class AppBlockerOverlayService : Service() {
                 tasks?.firstOrNull()?.topActivity?.packageName
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error obteniendo app desde ActivityManager: ${e.message}")
+            Log.e(TAG, "Error: ${e.message}")
             null
         }
     }
@@ -206,7 +322,13 @@ class AppBlockerOverlayService : Service() {
         }
 
         lastApp?.let { packageName ->
+            if (packageName != currentForegroundApp) {
+                trackAppChange(packageName)
+            }
+
             if (blockedApps.contains(packageName)) {
+                blockApp(packageName)
+            } else if (isTimeLimitExceeded(packageName)) {
                 blockApp(packageName)
             }
         }
@@ -228,7 +350,6 @@ class AppBlockerOverlayService : Service() {
 
         handler.postDelayed({
             forceCloseApp(packageName)
-
             handler.postDelayed({
                 checkForegroundApp()
             }, 200)
@@ -237,20 +358,17 @@ class AppBlockerOverlayService : Service() {
 
     private fun forceCloseApp(packageName: String) {
         try {
-            Log.d(TAG, "💀 Intentando cerrar app: $packageName")
-
+            Log.d(TAG, "💀 Cerrando: $packageName")
             activityManager.killBackgroundProcesses(packageName)
 
             try {
                 Runtime.getRuntime().exec(arrayOf("am", "force-stop", packageName))
-                Log.d(TAG, "✅ Comando force-stop ejecutado para: $packageName")
+                Log.d(TAG, "✅ Force-stop ejecutado")
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Error ejecutando force-stop: ${e.message}")
+                Log.e(TAG, "❌ Error: ${e.message}")
             }
-
-            Log.d(TAG, "💀 Procesos de cierre ejecutados para: $packageName")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error cerrando app: ${e.message}")
+            Log.e(TAG, "❌ Error: ${e.message}")
         }
     }
 
@@ -261,15 +379,14 @@ class AppBlockerOverlayService : Service() {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             startActivity(homeIntent)
-            Log.d(TAG, "🏠 Volviendo al home screen")
+            Log.d(TAG, "🏠 Volviendo al home")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error volviendo al home: ${e.message}")
+            Log.e(TAG, "❌ Error: ${e.message}")
         }
     }
 
     private fun showOverlay() {
         if (overlayView != null) {
-            Log.d(TAG, "👁️ Overlay ya visible")
             return
         }
 
@@ -379,14 +496,13 @@ class AppBlockerOverlayService : Service() {
         try {
             val wm = getSystemService(WINDOW_SERVICE) as WindowManager
             wm.addView(overlayView, layoutParams)
-            Log.d(TAG, "👁️ Overlay mostrado - se auto-eliminará en ${OVERLAY_MIN_DISPLAY_TIME}ms")
+            Log.d(TAG, "👁️ Overlay mostrado")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error mostrando overlay: ${e.message}")
+            Log.e(TAG, "❌ Error: ${e.message}")
             return
         }
 
         autoRemoveRunnable = Runnable {
-            Log.d(TAG, "⏰ Tiempo cumplido (${OVERLAY_MIN_DISPLAY_TIME}ms) - removiendo overlay automáticamente")
             removeOverlay()
         }
         handler.postDelayed(autoRemoveRunnable!!, OVERLAY_MIN_DISPLAY_TIME)
@@ -403,7 +519,7 @@ class AppBlockerOverlayService : Service() {
                 overlayView = null
                 Log.d(TAG, "👁️ Overlay removido")
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Error removiendo overlay: ${e.message}")
+                Log.e(TAG, "❌ Error: ${e.message}")
             }
         }
     }
@@ -411,6 +527,7 @@ class AppBlockerOverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacks(checkRunnable)
+        handler.removeCallbacks(usageUpdateRunnable)
         removeOverlay()
         lastBlockedPackage = null
     }

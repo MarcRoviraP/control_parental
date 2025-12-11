@@ -20,37 +20,67 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <RelativeLayout
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <ProgressBar
-            android:id="@+id/progressBar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_centerInParent="true"
-            android:visibility="visible" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/appsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone"
-            android:padding="8dp"
-            android:clipToPadding="false" />
-
-        <TextView
-            android:id="@+id/emptyStateTextView"
+        <!-- Botones de acción -->
+        <LinearLayout
+            android:id="@+id/actionButtonsLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_centerInParent="true"
-            android:padding="32dp"
-            android:text="Cargando apps instaladas..."
-            android:textAlignment="center"
-            android:textSize="16sp"
-            android:visibility="gone" />
+            android:orientation="horizontal"
+            android:padding="16dp"
+            android:gravity="center"
+            android:visibility="gone">
 
-    </RelativeLayout>
+            <Button
+                android:id="@+id/btnSelectAll"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="✅ Seleccionar todas"
+                android:textSize="13sp" />
+
+
+        </LinearLayout>
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <ProgressBar
+                android:id="@+id/progressBar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:visibility="visible" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/appsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone"
+                android:padding="8dp"
+                android:clipToPadding="false" />
+
+            <TextView
+                android:id="@+id/emptyStateTextView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:padding="32dp"
+                android:text="Cargando apps instaladas..."
+                android:textAlignment="center"
+                android:textSize="16sp"
+                android:visibility="gone" />
+
+        </RelativeLayout>
+
+    </LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

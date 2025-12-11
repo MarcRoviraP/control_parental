@@ -1,6 +1,7 @@
 package es.mrp.controlparental
 import android.Manifest
 import android.content.ContentValues.TAG
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
@@ -83,14 +84,28 @@ class ParentAccountActivity : AppCompatActivity() {
         childUsageAdapter.onManageBlockedAppsClick = { childUuid ->
             openBlockedAppsActivity(childUuid)
         }
+
+        // Configurar listener para abrir la activity de gestión de límites de tiempo
+        childUsageAdapter.onManageTimeLimitsClick = { childUuid ->
+            openTimeLimitsActivity(childUuid)
+        }
     }
 
     /**
      * Abre la activity de gestión de apps bloqueadas para un hijo específico
      */
     private fun openBlockedAppsActivity(childUuid: String) {
-        val intent = android.content.Intent(this, BlockedAppsActivity::class.java)
+        val intent = Intent(this, BlockedAppsActivity::class.java)
         intent.putExtra(BlockedAppsActivity.EXTRA_CHILD_UUID, childUuid)
+        startActivity(intent)
+    }
+
+    /**
+     * Abre la activity de gestión de límites de tiempo para un hijo específico
+     */
+    private fun openTimeLimitsActivity(childUuid: String) {
+        val intent = android.content.Intent(this, TimeLimitsActivity::class.java)
+        intent.putExtra(TimeLimitsActivity.EXTRA_CHILD_UUID, childUuid)
         startActivity(intent)
     }
 

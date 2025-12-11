@@ -80,12 +80,23 @@
         <!-- Botón para gestionar apps bloqueadas -->
         <Button
             android:id="@+id/manageAppsButton"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="🔒 Gestionar Apps Bloqueadas"
             android:textColor="#2196F3"
+            android:textSize="14sp" />
+
+        <!-- Botón para gestionar límites de tiempo -->
+        <Button
+            android:id="@+id/manageTimeLimitsButton"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="⏰ Gestionar Límites de Tiempo"
+            android:textColor="#FF9800"
             android:textSize="14sp" />
 
     </LinearLayout>

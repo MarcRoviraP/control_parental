@@ -13,6 +13,8 @@ class DataBaseUtils(context: Context) {
     val collectionQrContent = "qrContent"
     val collectionAppUsage = "appUsage"
     val collectionBlockedApps = "blockedApps"
+    val collectionTimeLimits = "timeLimits"
+    val collectionDailyUsage = "dailyUsage"
     var auth = Firebase.auth
     var credentialManager = CredentialManager.create(context)
 
@@ -489,6 +491,241 @@ class DataBaseUtils(context: Context) {
                     val apps = snapshot.get("apps") as? Map<String, String> ?: emptyMap()
                     Log.d("FIRESTORE", "Apps instaladas actualizadas: $childUuid (${apps.size} apps)")
                     onUpdate(apps)
+                }
+            }
+    }
+
+
+
+    // ============ FUNCIONES DE LÍMITES DE TIEMPO ============
+
+    /**
+     * Establece un límite de tiempo para una app o global
+     * @param childUuid UUID del hijo
+     * @param packageName Nombre del paquete (vacío para límite global)
+     * @param appName Nombre legible de la app
+     * @param dailyLimitMinutes Límite diario en minutos
+     * @param enabled Si el límite está habilitado
+     */
+    fun setTimeLimit(
+        childUuid: String,
+        packageName: String,
+        appName: String,
+        dailyLimitMinutes: Int,
+        enabled: Boolean = true,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val documentId = if (packageName.isEmpty()) {
+            "${childUuid}_GLOBAL"
+        } else {
+            "${childUuid}_${packageName}"
+        }
+
+        val timeLimitData = hashMapOf(
+            "childUID" to childUuid,
+            "packageName" to packageName,
+            "appName" to appName,
+            "dailyLimitMinutes" to dailyLimitMinutes,
+            "enabled" to enabled,
+            "updatedAt" to System.currentTimeMillis()
+        )
+
+        db.collection(collectionTimeLimits)
+            .document(documentId)
+            .set(timeLimitData)
+            .addOnSuccessListener {
+                Log.d("FIRESTORE", "Límite de tiempo establecido: $appName ($dailyLimitMinutes min)")
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error estableciendo límite de tiempo", e)
+                onError(e.message ?: "Error desconocido")
+            }
+    }
+
+    /**
+     * Elimina un límite de tiempo
+     */
+    fun removeTimeLimit(
+        childUuid: String,
+        packageName: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val documentId = if (packageName.isEmpty()) {
+            "${childUuid}_GLOBAL"
+        } else {
+            "${childUuid}_${packageName}"
+        }
+
+        db.collection(collectionTimeLimits)
+            .document(documentId)
+            .delete()
+            .addOnSuccessListener {
+                Log.d("FIRESTORE", "Límite de tiempo eliminado: $packageName")
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error eliminando límite de tiempo", e)
+                onError(e.message ?: "Error desconocido")
+            }
+    }
+
+    /**
+     * Escucha los límites de tiempo de un hijo en tiempo real
+     */
+    fun listenToTimeLimits(
+        childUuid: String,
+        onUpdate: (List<TimeLimit>) -> Unit
+    ) {
+        db.collection(collectionTimeLimits)
+            .whereEqualTo("childUID", childUuid)
+            .addSnapshotListener { snapshots, error ->
+                if (error != null) {
+                    Log.w("FIRESTORE", "Error escuchando límites de tiempo", error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshots != null) {
+                    val limits = snapshots.mapNotNull { doc ->
+                        try {
+                            TimeLimit(
+                                packageName = doc.getString("packageName") ?: "",
+                                dailyLimitMinutes = doc.getLong("dailyLimitMinutes")?.toInt() ?: 0,
+                                enabled = doc.getBoolean("enabled") ?: true,
+                                appName = doc.getString("appName") ?: ""
+                            )
+                        } catch (e: Exception) {
+                            Log.e("FIRESTORE", "Error parseando límite de tiempo", e)
+                            null
+                        }
+                    }
+                    Log.d("FIRESTORE", "Límites de tiempo actualizados: ${limits.size}")
+                    onUpdate(limits)
+                }
+            }
+    }
+
+    /**
+     * Obtiene los límites de tiempo de un hijo
+     */
+    fun getTimeLimits(
+        childUuid: String,
+        callback: (List<TimeLimit>) -> Unit
+    ) {
+        db.collection(collectionTimeLimits)
+            .whereEqualTo("childUID", childUuid)
+            .get()
+            .addOnSuccessListener { documents ->
+                val limits = documents.mapNotNull { doc ->
+                    try {
+                        TimeLimit(
+                            packageName = doc.getString("packageName") ?: "",
+                            dailyLimitMinutes = doc.getLong("dailyLimitMinutes")?.toInt() ?: 0,
+                            enabled = doc.getBoolean("enabled") ?: true,
+                            appName = doc.getString("appName") ?: ""
+                        )
+                    } catch (e: Exception) {
+                        Log.e("FIRESTORE", "Error parseando límite de tiempo", e)
+                        null
+                    }
+                }
+                Log.d("FIRESTORE", "Límites de tiempo obtenidos: ${limits.size}")
+                callback(limits)
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error obteniendo límites de tiempo", e)
+                callback(emptyList())
+            }
+    }
+
+    /**
+     * Registra el uso de una app para un día específico
+     */
+    fun updateDailyUsage(
+        childUuid: String,
+        packageName: String,
+        date: String,
+        usageTimeMillis: Long,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val documentId = "${childUuid}_${packageName}_${date}"
+
+        val usageData = hashMapOf(
+            "childUID" to childUuid,
+            "packageName" to packageName,
+            "date" to date,
+            "usageTimeMillis" to usageTimeMillis,
+            "updatedAt" to System.currentTimeMillis()
+        )
+
+        db.collection(collectionDailyUsage)
+            .document(documentId)
+            .set(usageData)
+            .addOnSuccessListener {
+                Log.d("FIRESTORE", "Uso diario actualizado: $packageName = ${usageTimeMillis}ms")
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error actualizando uso diario", e)
+                onError(e.message ?: "Error desconocido")
+            }
+    }
+
+    /**
+     * Obtiene el uso diario de una app
+     */
+    fun getDailyUsage(
+        childUuid: String,
+        packageName: String,
+        date: String,
+        callback: (Long) -> Unit
+    ) {
+        val documentId = "${childUuid}_${packageName}_${date}"
+
+        db.collection(collectionDailyUsage)
+            .document(documentId)
+            .get()
+            .addOnSuccessListener { document ->
+                val usage = document.getLong("usageTimeMillis") ?: 0L
+                callback(usage)
+            }
+            .addOnFailureListener { e ->
+                Log.w("FIRESTORE", "Error obteniendo uso diario", e)
+                callback(0L)
+            }
+    }
+
+    /**
+     * Escucha el uso diario en tiempo real
+     */
+    fun listenToDailyUsage(
+        childUuid: String,
+        date: String,
+        onUpdate: (Map<String, Long>) -> Unit
+    ) {
+        db.collection(collectionDailyUsage)
+            .whereEqualTo("childUID", childUuid)
+            .whereEqualTo("date", date)
+            .addSnapshotListener { snapshots, error ->
+                if (error != null) {
+                    Log.w("FIRESTORE", "Error escuchando uso diario", error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshots != null) {
+                    val usageMap = mutableMapOf<String, Long>()
+                    for (doc in snapshots) {
+                        val packageName = doc.getString("packageName")
+                        val usage = doc.getLong("usageTimeMillis")
+                        if (packageName != null && usage != null) {
+                            usageMap[packageName] = usage
+                        }
+                    }
+                    Log.d("FIRESTORE", "Uso diario actualizado: ${usageMap.size} apps")
+                    onUpdate(usageMap)
                 }
             }
     }
