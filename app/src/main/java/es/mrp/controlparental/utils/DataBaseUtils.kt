@@ -572,7 +572,8 @@ class DataBaseUtils(context: Context) {
                     "enabled" to limit.enabled
                 )
                 
-                val key = if (limit.packageName.isEmpty()) "" else limit.packageName
+                // Usar una clave especial para el límite global en lugar de cadena vacía
+                val key = if (limit.packageName.isEmpty()) "GLOBAL_LIMIT" else limit.packageName
                 timeLimitsMap[key] = limitData
             }
             
@@ -690,4 +691,3 @@ class DataBaseUtils(context: Context) {
             }
     }
 }
-

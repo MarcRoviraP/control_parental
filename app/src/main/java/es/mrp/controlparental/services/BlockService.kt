@@ -108,14 +108,27 @@ class AppBlockerOverlayService : Service() {
             // Cambiar a leer desde appUsage en lugar de timeLimits
             dbUtils.listenToTimeLimitsFromUsage(uuid) { limits ->
                 timeLimits.clear()
+                globalTimeLimit = null  // Limpiar antes de procesar
+
+                Log.d(TAG, "📊 Total de límites recibidos: ${limits.size}")
+
                 for (limit in limits) {
-                    if (limit.packageName.isEmpty()) {
+                    Log.d(TAG, "📊 Procesando límite: packageName='${limit.packageName}', appName='${limit.appName}', minutes=${limit.dailyLimitMinutes}, enabled=${limit.enabled}")
+
+                    // Reconocer tanto packageName vacío como "GLOBAL_LIMIT"
+                    if (limit.packageName.isEmpty() || limit.packageName == "GLOBAL_LIMIT") {
                         globalTimeLimit = limit
-                        Log.d(TAG, "⏰ Límite global desde appUsage: ${limit.dailyLimitMinutes} min")
+                        Log.d(TAG, "⏰ Límite global desde appUsage: ${limit.dailyLimitMinutes} min (enabled=${limit.enabled})")
                     } else {
                         timeLimits[limit.packageName] = limit
                         Log.d(TAG, "⏰ Límite ${limit.appName} desde appUsage: ${limit.dailyLimitMinutes} min")
                     }
+                }
+
+                if (globalTimeLimit == null) {
+                    Log.w(TAG, "⚠️ No se encontró límite global después de procesar ${limits.size} límites")
+                } else {
+                    Log.d(TAG, "✅ Límite global configurado: ${globalTimeLimit?.dailyLimitMinutes} min")
                 }
             }
         }
