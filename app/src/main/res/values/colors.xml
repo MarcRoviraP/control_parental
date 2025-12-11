@@ -1,11 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
-    <color name="white_hover">#E0E0E0</color>
+    <!-- Colores principales -->
+    <color name="primary_500">#2196F3</color>
+    <color name="primary_600">#1E88E5</color>
+    <color name="primary_700">#1976D2</color>
+    <color name="primary_800">#1565C0</color>
+
+    <!-- Colores de acento -->
+    <color name="accent_500">#FF9800</color>
+    <color name="accent_600">#FB8C00</color>
+    <color name="accent_700">#F57C00</color>
+
+    <!-- Colores de superficie - Modo Claro -->
+    <color name="surface_light">#FFFFFF</color>
+    <color name="surface_variant_light">#F5F5F5</color>
+    <color name="background_light">#FAFAFA</color>
+    <color name="card_light">#FFFFFF</color>
+
+    <!-- Colores de superficie - Modo Oscuro -->
+    <color name="surface_dark">#1E1E1E</color>
+    <color name="surface_variant_dark">#2D2D2D</color>
+    <color name="background_dark">#121212</color>
+    <color name="card_dark">#252525</color>
+
+    <!-- Colores de texto - Modo Claro -->
+    <color name="text_primary_light">#212121</color>
+    <color name="text_secondary_light">#757575</color>
+    <color name="text_disabled_light">#BDBDBD</color>
+
+    <!-- Colores de texto - Modo Oscuro -->
+    <color name="text_primary_dark">#FFFFFF</color>
+    <color name="text_secondary_dark">#B0B0B0</color>
+    <color name="text_disabled_dark">#6B6B6B</color>
+
+    <!-- Colores de estado -->
+    <color name="success">#4CAF50</color>
+    <color name="error">#EF4444</color>
+    <color name="warning">#FF9800</color>
+    <color name="info">#2196F3</color>
+
+    <!-- Colores de bordes y divisores -->
+    <color name="border_light">#E0E0E0</color>
+    <color name="divider_light">#E0E0E0</color>
+    <color name="border_dark">#3D3D3D</color>
+    <color name="divider_dark">#3D3D3D</color>
+
+    <!-- Colores estáticos -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="transparent">#00000000</color>
+
+    <!-- Colores de ripple/overlay -->
+    <color name="ripple_light">#1F000000</color>
+    <color name="ripple_dark">#1FFFFFFF</color>
 </resources>

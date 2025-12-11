@@ -5,7 +5,8 @@
     android:layout_height="wrap_content"
     android:layout_margin="8dp"
     app:cardCornerRadius="8dp"
-    app:cardElevation="4dp">
+    app:cardElevation="4dp"
+    app:cardBackgroundColor="?attr/colorSurface">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -43,12 +44,23 @@
                     android:textColor="?android:attr/textColorPrimary"/>
 
                 <TextView
+                    android:id="@+id/totalUsageTimeTextView"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Tiempo total: 0h 0m"
+                    android:textSize="14sp"
+                    android:textColor="?attr/colorPrimary"
+                    android:textStyle="bold"
+                    android:layout_marginTop="2dp"/>
+
+                <TextView
                     android:id="@+id/lastUpdateTextView"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Actualizado hace 30s"
                     android:textSize="12sp"
-                    android:textColor="?android:attr/textColorSecondary"/>
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:layout_marginTop="2dp"/>
 
             </LinearLayout>
 
@@ -66,7 +78,7 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:background="#E0E0E0"
+            android:background="?attr/colorControlHighlight"
             android:layout_marginTop="12dp"
             android:layout_marginBottom="12dp"/>
 
@@ -80,23 +92,21 @@
         <!-- Botón para gestionar apps bloqueadas -->
         <Button
             android:id="@+id/manageAppsButton"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
+            style="@style/ButtonTextStyle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="🔒 Gestionar Apps Bloqueadas"
-            android:textColor="#2196F3"
             android:textSize="14sp" />
 
         <!-- Botón para gestionar límites de tiempo -->
         <Button
             android:id="@+id/manageTimeLimitsButton"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
+            style="@style/ButtonTextStyle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="⏰ Gestionar Límites de Tiempo"
-            android:textColor="#FF9800"
             android:textSize="14sp" />
 
     </LinearLayout>

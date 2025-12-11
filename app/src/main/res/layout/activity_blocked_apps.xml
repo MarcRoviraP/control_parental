@@ -4,12 +4,14 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground"
     tools:context=".BlockedAppsActivity">
 
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar">
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+        app:elevation="4dp">
 
         <androidx.appcompat.widget.Toolbar
             android:id="@+id/toolbar"
@@ -34,11 +36,12 @@
             android:orientation="horizontal"
             android:padding="16dp"
             android:gravity="center"
-            android:visibility="gone">
+            android:visibility="gone"
+            android:background="?attr/colorSurface">
 
             <Button
                 android:id="@+id/btnSelectAll"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
+                style="@style/ButtonTextStyle"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
@@ -77,6 +80,7 @@
                 android:text="Cargando apps instaladas..."
                 android:textAlignment="center"
                 android:textSize="16sp"
+                android:textColor="?android:attr/textColorSecondary"
                 android:visibility="gone" />
 
         </RelativeLayout>

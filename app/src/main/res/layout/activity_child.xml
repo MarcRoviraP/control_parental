@@ -39,7 +39,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:maxImageSize="40dp"
-        app:rippleColor="@color/white_hover"
+        app:rippleColor="?attr/colorControlHighlight"
         app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay.App.Rounded"
         app:srcCompat="@mipmap/ic_qr" />
 

@@ -32,24 +32,24 @@
         android:theme="@style/Theme.ControlParental"
         tools:targetApi="31">
         <activity
-            android:name=".ParentAccountActivity"
+            android:name=".activities.ParentAccountActivity"
             android:exported="false" />
         <activity
-            android:name=".TimeLimitsActivity"
+            android:name=".activities.TimeLimitsActivity"
             android:exported="false"
-            android:parentActivityName=".ParentAccountActivity" />
+            android:parentActivityName=".activities.ParentAccountActivity" />
         <activity
-            android:name=".BlockedAppsActivity"
+            android:name=".activities.BlockedAppsActivity"
             android:exported="false"
-            android:parentActivityName=".ParentAccountActivity" />
+            android:parentActivityName=".activities.ParentAccountActivity" />
         <activity
-            android:name=".ChildActivity"
+            android:name=".activities.ChildActivity"
             android:exported="false" />
         <activity
-            android:name=".MainActivity"
+            android:name=".activities.MainActivity"
             android:exported="false" />
         <activity
-            android:name=".SplashActivity"
+            android:name=".activities.SplashActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.ControlParental">
@@ -61,13 +61,13 @@
         </activity>
 
         <service
-            android:name=".AppBlockerOverlayService"
+            android:name=".services.AppBlockerOverlayService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
 
         <service
-            android:name=".AppUsageMonitorService"
+            android:name=".services.AppUsageMonitorService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse">
@@ -77,7 +77,7 @@
         </service>
 
         <receiver
-            android:name=".BootReceiver"
+            android:name=".receivers.BootReceiver"
             android:enabled="true"
             android:exported="true"
             android:directBootAware="true"
@@ -90,7 +90,7 @@
             </intent-filter>
         </receiver>
         <receiver
-            android:name=".ParentalControlAdminReceiver"
+            android:name=".receivers.ParentalControlAdminReceiver"
             android:exported="true"
             android:permission="android.permission.BIND_DEVICE_ADMIN">
             <meta-data

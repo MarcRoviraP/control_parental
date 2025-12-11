@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/gradient_background"
+    android:background="?attr/colorPrimary"
     android:padding="16dp"
     tools:context=".MainActivity">
 
@@ -15,7 +15,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="80dp"
         android:text="Crear Perfil"
-        android:textColor="@android:color/white"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="28sp"
         android:textStyle="bold"
         app:layout_constraintBottom_toTopOf="@+id/subtitleText"
@@ -29,7 +29,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Selecciona tu perfil"
-        android:textColor="@android:color/white"
+        android:textColor="?attr/colorOnSurface"
+        android:alpha="0.9"
         android:textSize="18sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -55,14 +56,15 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="24dp"
             app:cardCornerRadius="16dp"
-            app:cardElevation="8dp">
+            app:cardElevation="8dp"
+            app:cardBackgroundColor="?attr/colorSurface">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/button_hijos_background"
                 android:orientation="horizontal"
-                android:padding="20dp">
+                android:padding="20dp"
+                android:background="?attr/colorSurface">
 
                 <ImageView
                     android:layout_width="60dp"
@@ -80,9 +82,17 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Soy Hijo"
-                        android:textColor="@android:color/white"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:textSize="20sp"
                         android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Acceso supervisado"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:textSize="14sp"
+                        android:layout_marginTop="4dp" />
 
                 </LinearLayout>
             </LinearLayout>
@@ -93,15 +103,16 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardCornerRadius="16dp"
-            app:cardElevation="8dp">
+            app:cardElevation="8dp"
+            app:cardBackgroundColor="?attr/colorSurface">
 
             <LinearLayout
                 android:id="@+id/cardVwParent"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@drawable/button_padres_background"
                 android:orientation="horizontal"
-                android:padding="20dp">
+                android:padding="20dp"
+                android:background="?attr/colorSurface">
 
                 <ImageView
                     android:layout_width="60dp"
@@ -119,9 +130,17 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Soy Padre"
-                        android:textColor="@android:color/white"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:textSize="20sp"
                         android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Control y supervisión"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:textSize="14sp"
+                        android:layout_marginTop="4dp" />
 
                 </LinearLayout>
             </LinearLayout>
@@ -133,7 +152,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Selecciona la opción que mejor describa tu rol"
-        android:textColor="@android:color/white"
+        android:textColor="?attr/colorOnSurface"
+        android:alpha="0.8"
         android:textSize="14sp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
