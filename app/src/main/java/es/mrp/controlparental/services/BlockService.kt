@@ -57,6 +57,7 @@ class AppBlockerOverlayService : Service() {
         private const val TAG = "AppBlockerService"
         private const val PREFS_NAME = "preferences"
         private const val UUID_KEY = "uuid"
+        private const val LAST_RESET_DATE_KEY = "last_reset_date"
         private const val BLOCK_COOLDOWN = 500L
         private const val OVERLAY_MIN_DISPLAY_TIME = 3000L
     }
@@ -73,6 +74,10 @@ class AppBlockerOverlayService : Service() {
 
         if (childUuid != null) {
             Log.d(TAG, "✅ UUID encontrado: $childUuid - Iniciando monitoreo completo")
+
+            // Verificar si cambió el día y limpiar contadores locales
+            checkAndResetLocalCountersIfNeeded()
+
             startListeningToBlockedApps()
             startListeningToTimeLimits()
             loadTodayUsage()
@@ -89,6 +94,42 @@ class AppBlockerOverlayService : Service() {
 
         handler.post(checkRunnable)
         handler.post(usageUpdateRunnable)
+    }
+
+    /**
+     * Verifica si cambió el día y limpia los contadores locales de uso
+     */
+    private fun checkAndResetLocalCountersIfNeeded() {
+        val sharedPref = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val lastResetDate = sharedPref.getString(LAST_RESET_DATE_KEY, "")
+        val currentDate = getCurrentDate()
+
+        Log.d(TAG, "📅 Verificando cambio de día - Último reset: $lastResetDate, Fecha actual: $currentDate")
+
+        if (lastResetDate != currentDate) {
+            Log.d(TAG, "🔄 ¡Cambió el día! Limpiando contadores locales...")
+
+            // Limpiar contadores locales
+            dailyUsage.clear()
+            globalDailyUsage = 0L
+
+            // Guardar la nueva fecha
+            sharedPref.edit().putString(LAST_RESET_DATE_KEY, currentDate).apply()
+
+            Log.d(TAG, "✅ Contadores locales reiniciados para el nuevo día: $currentDate")
+        } else {
+            Log.d(TAG, "✅ Mismo día, no se requiere reinicio de contadores locales")
+        }
+    }
+
+    @SuppressLint("DefaultLocale")
+    private fun getCurrentDate(): String {
+        val calendar = java.util.Calendar.getInstance()
+        return String.format("%04d-%02d-%02d",
+            calendar.get(java.util.Calendar.YEAR),
+            calendar.get(java.util.Calendar.MONTH) + 1,
+            calendar.get(java.util.Calendar.DAY_OF_MONTH)
+        )
     }
 
     private fun startListeningToBlockedApps() {
@@ -163,6 +204,12 @@ class AppBlockerOverlayService : Service() {
                                 val packageName = appData["packageName"] as? String ?: ""
                                 val timeInForeground = (appData["timeInForeground"] as? Number)?.toLong() ?: 0L
 
+                                // ⚠️ EXCLUIR LA PROPIA APP DE CONTROL PARENTAL DEL CONTEO
+                                if (packageName == applicationContext.packageName) {
+                                    Log.d(TAG, "⏭️ Excluyendo app de Control Parental del conteo")
+                                    continue
+                                }
+
                                 if (packageName.isNotEmpty() && timeInForeground > 0) {
                                     dailyUsage[packageName] = timeInForeground
                                     totalUsage += timeInForeground
@@ -205,6 +252,13 @@ class AppBlockerOverlayService : Service() {
     private fun updateCurrentAppUsage() {
         val currentApp = currentForegroundApp
         if (currentApp != null && foregroundAppStartTime > 0) {
+            // ⚠️ NO CONTAR EL TIEMPO DE LA PROPIA APP DE CONTROL PARENTAL
+            if (currentApp == applicationContext.packageName) {
+                Log.d(TAG, "⏭️ App de Control Parental en uso - NO se contabiliza tiempo")
+                foregroundAppStartTime = System.currentTimeMillis() // Resetear el tiempo
+                return
+            }
+
             val currentTime = System.currentTimeMillis()
             val sessionTime = currentTime - foregroundAppStartTime
 
@@ -215,9 +269,8 @@ class AppBlockerOverlayService : Service() {
             globalDailyUsage += sessionTime
             foregroundAppStartTime = currentTime
 
-            // NOTA: Ya NO escribimos en Firebase aquí
-            // El ChildActivity se encarga de subir los datos cada minuto
-            // Aquí solo actualizamos las variables locales para verificar límites
+            // Actualizar Firebase con el tiempo de uso actual
+            uploadCurrentUsageToFirebase()
 
             // Log del uso de la app actual
             val appUsageMinutes = newUsage / 60000
@@ -249,8 +302,84 @@ class AppBlockerOverlayService : Service() {
     }
 
     /**
-     * Verifica si una app está instalada por el usuario (no es del sistema)
+     * Sube el uso actual a Firebase evitando duplicados.
+     * Verifica si ya existe una entrada con el mismo packageName antes de añadir.
      */
+    private fun uploadCurrentUsageToFirebase() {
+        childUuid?.let { uuid ->
+            try {
+                // Primero obtenemos los datos actuales de Firebase
+                dbUtils.getChildAppUsage(uuid) { existingData ->
+                    val usageData = hashMapOf<String, Any>()
+                    val captureTimestamp = System.currentTimeMillis()
+
+                    // Crear un mapa de packageName -> clave (app_X) existente
+                    val existingPackageKeys = mutableMapOf<String, String>()
+
+                    if (existingData != null) {
+                        val excludedFields = setOf(
+                            "childUID",
+                            "timestamp",
+                            "lastCaptureTime",
+                            "blockedApps",
+                            "timeLimits"
+                        )
+
+                        // Mapear packageNames existentes a sus claves app_X
+                        for ((key, value) in existingData) {
+                            if (!excludedFields.contains(key) && value is Map<*, *>) {
+                                @Suppress("UNCHECKED_CAST")
+                                val appData = value as Map<String, Any>
+                                val packageName = appData["packageName"] as? String
+                                if (packageName != null) {
+                                    existingPackageKeys[packageName] = key
+                                }
+                            }
+                        }
+                    }
+
+                    Log.d(TAG, "📋 Paquetes existentes en Firebase: ${existingPackageKeys.keys}")
+
+                    // Construir los datos a subir, reutilizando claves existentes
+                    var newIndex = 0
+                    dailyUsage.forEach { (packageName, timeInForeground) ->
+                        try {
+                            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                            val appName = packageManager.getApplicationLabel(appInfo).toString()
+
+                            // Si el paquete ya existe, usar su clave existente
+                            val key = existingPackageKeys[packageName] ?: run {
+                                // Buscar el siguiente índice disponible
+                                while (existingPackageKeys.containsValue("app_$newIndex")) {
+                                    newIndex++
+                                }
+                                "app_${newIndex++}"
+                            }
+
+                            usageData[key] = hashMapOf(
+                                "packageName" to packageName,
+                                "appName" to appName,
+                                "timeInForeground" to timeInForeground,
+                                "lastTimeUsed" to System.currentTimeMillis(),
+                                "capturedAt" to captureTimestamp
+                            )
+                        } catch (e: PackageManager.NameNotFoundException) {
+                            Log.w(TAG, "App no encontrada: $packageName")
+                        }
+                    }
+
+                    if (usageData.isNotEmpty()) {
+                        usageData["lastCaptureTime"] = captureTimestamp
+                        dbUtils.uploadAppUsage(uuid, usageData)
+                        Log.d(TAG, "✅ Uso actualizado en Firebase sin duplicados: ${usageData.size - 1} apps")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error subiendo uso a Firebase: ${e.message}")
+            }
+        }
+    }
+
     private fun isUserInstalledApp(packageName: String): Boolean {
         return try {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
@@ -263,16 +392,6 @@ class AppBlockerOverlayService : Service() {
             Log.w(TAG, "⚠️ App no encontrada: $packageName")
             false
         }
-    }
-
-    @SuppressLint("DefaultLocale")
-    private fun getCurrentDate(): String {
-        val calendar = java.util.Calendar.getInstance()
-        return String.format("%04d-%02d-%02d",
-            calendar.get(java.util.Calendar.YEAR),
-            calendar.get(java.util.Calendar.MONTH) + 1,
-            calendar.get(java.util.Calendar.DAY_OF_MONTH)
-        )
     }
 
     private fun trackAppChange(newApp: String?) {

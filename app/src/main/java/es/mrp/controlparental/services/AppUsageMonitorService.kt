@@ -37,6 +37,7 @@ class AppUsageMonitorService : Service() {
         private const val TAG = "AppUsageMonitor"
         private const val PREFS_NAME = "preferences"
         private const val UUID_KEY = "uuid"
+        private const val LAST_RESET_DATE_KEY = "last_reset_date"
         private const val UPDATE_INTERVAL = 30000L // 30 segundos
         private const val INSTALLED_APPS_UPDATE_INTERVAL = 300000L // 5 minutos para apps instaladas
         private const val NOTIFICATION_ID = 1001
@@ -65,6 +66,9 @@ class AppUsageMonitorService : Service() {
 
         if (childUuid != null) {
             Log.d(TAG, "✅ UUID encontrado: $childUuid - Iniciando monitoreo")
+
+            // Verificar si cambió el día y reiniciar contadores si es necesario
+            checkAndResetDailyUsageIfNeeded()
 
             // Enviar apps instaladas inmediatamente
             uploadInstalledApps()
@@ -126,6 +130,9 @@ class AppUsageMonitorService : Service() {
         serviceScope.launch {
             while (true) {
                 try {
+                    // Verificar cambio de día en cada ciclo
+                    checkAndResetDailyUsageIfNeeded()
+
                     collectAndUploadUsageData()
                     delay(UPDATE_INTERVAL)
                 } catch (e: Exception) {
@@ -193,7 +200,7 @@ class AppUsageMonitorService : Service() {
             return
         }
 
-        // Obtener las estadísticas de uso de las últimas 24 horas
+        // Obtener las estadísticas de uso desde las 00:00 del día actual
         val usageStatsList = getUsageStats()
 
         if (usageStatsList.isNotEmpty()) {
@@ -351,12 +358,21 @@ class AppUsageMonitorService : Service() {
     }
 
     /**
-     * Obtiene las estadísticas de uso de las últimas 24 horas
+     * Obtiene las estadísticas de uso desde las 00:00 del día actual
      */
     private fun getUsageStats(): List<UsageStats> {
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - 1000 * 60 * 60 * 24 // Últimas 24 horas
+
+        // Calcular el inicio del día (00:00:00)
+        val calendar = java.util.Calendar.getInstance()
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        calendar.set(java.util.Calendar.MINUTE, 0)
+        calendar.set(java.util.Calendar.SECOND, 0)
+        calendar.set(java.util.Calendar.MILLISECOND, 0)
+        val startTime = calendar.timeInMillis
+
+        Log.d(TAG, "📊 Obteniendo estadísticas desde las 00:00 del día actual")
 
         return usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_DAILY,
@@ -401,4 +417,47 @@ class AppUsageMonitorService : Service() {
         super.onDestroy()
         Log.d(TAG, "Servicio de monitoreo detenido")
     }
+
+    /**
+     * Verifica si cambió el día y reinicia los contadores si es necesario
+     */
+    private fun checkAndResetDailyUsageIfNeeded() {
+        val sharedPref = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val lastResetDate = sharedPref.getString(LAST_RESET_DATE_KEY, "")
+        val currentDate = getCurrentDate()
+
+        Log.d(TAG, "📅 Verificando cambio de día - Último reset: $lastResetDate, Fecha actual: $currentDate")
+
+        if (lastResetDate != currentDate) {
+            Log.d(TAG, "🔄 ¡Cambió el día! Reiniciando contadores...")
+
+            childUuid?.let { uuid ->
+                dbUtils.resetDailyUsage(uuid,
+                    onSuccess = {
+                        // Guardar la nueva fecha de reinicio
+                        sharedPref.edit().putString(LAST_RESET_DATE_KEY, currentDate).apply()
+                        Log.d(TAG, "✅ Contadores reiniciados para el nuevo día: $currentDate")
+                    },
+                    onError = { error ->
+                        Log.e(TAG, "❌ Error reiniciando contadores: $error")
+                    }
+                )
+            }
+        } else {
+            Log.d(TAG, "✅ Mismo día, no se requiere reinicio")
+        }
+    }
+
+    /**
+     * Obtiene la fecha actual en formato YYYY-MM-DD
+     */
+    private fun getCurrentDate(): String {
+        val calendar = java.util.Calendar.getInstance()
+        return String.format("%04d-%02d-%02d",
+            calendar.get(java.util.Calendar.YEAR),
+            calendar.get(java.util.Calendar.MONTH) + 1,
+            calendar.get(java.util.Calendar.DAY_OF_MONTH)
+        )
+    }
 }
+

@@ -15,69 +15,50 @@ class DataBaseUtils(context: Context) {
     val collectionAppUsage = "appUsage"
     val collectionBlockedApps = "blockedApps"
     val collectionTimeLimits = "timeLimits"
+    val collectionInstalledApps = "installedApps"
+
     var auth = Firebase.auth
     var credentialManager = CredentialManager.create(context)
 
+    // ============================================
+    // TAGS PARA LOGS POR COLECCIÓN
+    // ============================================
+    companion object {
+        private const val TAG_QR = "DB_QR"
+        private const val TAG_FAMILIA = "DB_FAMILIA"
+        private const val TAG_APP_USAGE = "DB_APP_USAGE"
+        private const val TAG_BLOCKED_APPS = "DB_BLOCKED_APPS"
+        private const val TAG_TIME_LIMITS = "DB_TIME_LIMITS"
+        private const val TAG_INSTALLED_APPS = "DB_INSTALLED_APPS"
+    }
 
-    fun updateInFirestore(collection: String, documentId: String, updates: Map<String, Any>) {
-        db.collection(collection)
-            .document(documentId)
-            .update(updates)
-            .addOnSuccessListener {
-                Log.d("FIRESTORE", "Documento actualizado con ID: $documentId")
-            }
-            .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error actualizando documento", e)
-            }
-    }
-    
-    fun writeInFirestore(collection: String, message: HashMap<String, Any>) {
-        db.collection(collection)
-            .add(message)
-            .addOnSuccessListener { documentReference ->
-                Log.d("FIRESTORE", "Documento añadido con ID: ${documentReference.id}")
-            }
-            .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error añadiendo documento", e)
-            }
-    }
-    
-    fun readCollectionFromFirestore(collection: String) {
-        db.collection(collection)
-            .get()
-            .addOnSuccessListener { result ->
-                for (document in result) {
-                    Log.d("FIRESTORE", "${document.id} => ${document.data}")
-                }
-            }
-            .addOnFailureListener { exception ->
-                Log.w("FIRESTORE", "Error obteniendo documentos.", exception)
-            }
-    }
-    
+    // ============================================
+    // COLECCIÓN: qrContent
+    // ============================================
+
     fun deleteQrContentFromFirestore(uuid: String) {
         db.collection(collectionQrContent)
             .whereEqualTo("uuid", uuid)
             .get()
             .addOnSuccessListener { result ->
                 if (result.isEmpty) {
-                    Log.w("FIRESTORE", "No se encontró ningún documento con uuid: $uuid")
+                    Log.w(TAG_QR, "No se encontró ningún documento con uuid: $uuid")
                 } else {
                     for (document in result) {
                         db.collection(collectionQrContent)
                             .document(document.id)
                             .delete()
                             .addOnSuccessListener {
-                                Log.d("FIRESTORE", "Documento QR eliminado exitosamente: ${document.id}")
+                                Log.d(TAG_QR, "Documento QR eliminado exitosamente: ${document.id}")
                             }
                             .addOnFailureListener { e ->
-                                Log.w("FIRESTORE", "Error eliminando documento QR: ${document.id}", e)
+                                Log.w(TAG_QR, "Error eliminando documento QR: ${document.id}", e)
                             }
                     }
                 }
             }
             .addOnFailureListener { exception ->
-                Log.w("FIRESTORE", "Error buscando documentos para eliminar.", exception)
+                Log.w(TAG_QR, "Error buscando documentos para eliminar.", exception)
             }
     }
     
@@ -92,23 +73,23 @@ class DataBaseUtils(context: Context) {
             .addOnSuccessListener { result ->
                 if (result.isEmpty) {
                     val errorMsg = "No se encontró ningún documento con uuid: $uuid"
-                    Log.w("FIRESTORE", errorMsg)
+                    Log.w(TAG_QR, errorMsg)
                     onError(errorMsg)
                 } else {
                     val foundUuid = result.documents[0].getString("uuid")
                     if (foundUuid != null) {
-                        Log.d("FIRESTORE", "UUID encontrado: $foundUuid")
+                        Log.d(TAG_QR, "UUID encontrado: $foundUuid")
                         onSuccess(foundUuid)
                     } else {
                         val errorMsg = "El documento no contiene el campo uuid"
-                        Log.w("FIRESTORE", errorMsg)
+                        Log.w(TAG_QR, errorMsg)
                         onError(errorMsg)
                     }
                 }
             }
             .addOnFailureListener { exception ->
                 val errorMsg = "Error buscando documento con uuid: $uuid"
-                Log.w("FIRESTORE", errorMsg, exception)
+                Log.w(TAG_QR, errorMsg, exception)
                 onError(errorMsg)
             }
     }
@@ -122,14 +103,29 @@ class DataBaseUtils(context: Context) {
             .get()
             .addOnSuccessListener { result ->
                 val exists = !result.isEmpty
-                Log.d("FIRESTORE", "UUID $uuid existe: $exists")
+                Log.d(TAG_QR, "UUID $uuid existe: $exists")
                 callback(exists)
             }
             .addOnFailureListener { exception ->
-                Log.w("FIRESTORE", "Error verificando existencia de uuid: $uuid", exception)
+                Log.w(TAG_QR, "Error verificando existencia de uuid: $uuid", exception)
                 callback(false)
             }
     }
+
+    fun writeInFirestore(collection: String, message: HashMap<String, Any>) {
+        db.collection(collection)
+            .add(message)
+            .addOnSuccessListener { documentReference ->
+                Log.d("DB_WRITE", "Documento añadido con ID: ${documentReference.id} en $collection")
+            }
+            .addOnFailureListener { e ->
+                Log.w("DB_WRITE", "Error añadiendo documento en $collection", e)
+            }
+    }
+
+    // ============================================
+    // COLECCIÓN: familia
+    // ============================================
 
     fun childExists(
         childUuid: String,
@@ -143,31 +139,105 @@ class DataBaseUtils(context: Context) {
             .addOnSuccessListener { result ->
                 val exists = !result.isEmpty
                 if (exists) {
-                    Log.d("FIRESTORE", "Relación encontrada: Padre $parentUuid tiene hijo $childUuid")
+                    Log.d(TAG_FAMILIA, "Relación encontrada: Padre $parentUuid tiene hijo $childUuid")
                 } else {
-                    Log.d("FIRESTORE", "No existe relación entre padre $parentUuid e hijo $childUuid")
+                    Log.d(TAG_FAMILIA, "No existe relación entre padre $parentUuid e hijo $childUuid")
                 }
                 callback(exists)
             }
             .addOnFailureListener { exception ->
-                Log.w("FIRESTORE", "Error verificando relación padre-hijo", exception)
+                Log.w(TAG_FAMILIA, "Error verificando relación padre-hijo", exception)
                 callback(false)
             }
     }
+
+    fun getChildName(childUid: String, callback: (String) -> Unit) {
+        callback("Hijo")
+    }
+
+    // ============================================
+    // COLECCIÓN: appUsage
+    // ============================================
 
     fun uploadAppUsage(childUuid: String, usageData: HashMap<String, Any>) {
         usageData["childUID"] = childUuid
         usageData["timestamp"] = System.currentTimeMillis()
 
+        Log.d(TAG_APP_USAGE, "Subiendo datos para hijo $childUuid: ${usageData.keys.filter { it.startsWith("app_") }.size} apps")
         db.collection(collectionAppUsage)
             .document(childUuid)
             .set(usageData, com.google.firebase.firestore.SetOptions.merge())
             .addOnSuccessListener {
-                Log.d("FIRESTORE", "Datos de uso subidos para hijo: $childUuid")
+                Log.d(TAG_APP_USAGE, "✅ Datos de uso subidos para hijo: $childUuid")
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error subiendo datos de uso", e)
+                Log.w(TAG_APP_USAGE, "❌ Error subiendo datos de uso", e)
             }
+    }
+
+    /**
+     * Reinicia el contador de uso diario a 0 para todas las aplicaciones
+     * Esto se debe llamar cuando cambia el día (a las 00:00)
+     */
+    fun resetDailyUsage(childUuid: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        Log.d(TAG_APP_USAGE, "🔄 Reiniciando contador diario para hijo: $childUuid")
+
+        // Obtener el documento actual para preservar solo los campos no relacionados con app_X
+        db.collection(collectionAppUsage)
+            .document(childUuid)
+            .get()
+            .addOnSuccessListener { document ->
+                if (document.exists()) {
+                    val currentData = document.data ?: emptyMap()
+
+                    // Crear un nuevo mapa solo con los campos que NO son app_X
+                    val preservedData = mutableMapOf<String, Any>()
+                    val excludedFields = setOf("childUID", "timestamp", "lastCaptureTime", "blockedApps", "timeLimits")
+
+                    for ((key, value) in currentData) {
+                        if (excludedFields.contains(key)) {
+                            preservedData[key] = value
+                        }
+                    }
+
+                    // Actualizar timestamp
+                    preservedData["timestamp"] = System.currentTimeMillis()
+                    preservedData["lastCaptureTime"] = System.currentTimeMillis()
+                    preservedData["lastResetDate"] = getCurrentDate()
+
+                    // Sobrescribir el documento (esto elimina los campos app_X)
+                    db.collection(collectionAppUsage)
+                        .document(childUuid)
+                        .set(preservedData)
+                        .addOnSuccessListener {
+                            Log.d(TAG_APP_USAGE, "✅ Contador diario reiniciado exitosamente")
+                            onSuccess()
+                        }
+                        .addOnFailureListener { e ->
+                            Log.w(TAG_APP_USAGE, "❌ Error reiniciando contador diario", e)
+                            onError(e.message ?: "Error desconocido")
+                        }
+                } else {
+                    Log.w(TAG_APP_USAGE, "⚠️ No hay documento para reiniciar")
+                    onSuccess()
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.w(TAG_APP_USAGE, "❌ Error obteniendo documento para reinicio", e)
+                onError(e.message ?: "Error desconocido")
+            }
+    }
+
+    /**
+     * Obtiene la fecha actual en formato YYYY-MM-DD
+     */
+    private fun getCurrentDate(): String {
+        val calendar = java.util.Calendar.getInstance()
+        return String.format("%04d-%02d-%02d",
+            calendar.get(java.util.Calendar.YEAR),
+            calendar.get(java.util.Calendar.MONTH) + 1,
+            calendar.get(java.util.Calendar.DAY_OF_MONTH)
+        )
     }
 
     fun listenToChildrenAppUsage(
@@ -186,13 +256,13 @@ class DataBaseUtils(context: Context) {
                             .document(childUuid)
                             .addSnapshotListener { snapshot, error ->
                                 if (error != null) {
-                                    Log.w("FIRESTORE", "Error escuchando datos de hijo: $childUuid", error)
+                                    Log.w(TAG_APP_USAGE, "Error escuchando datos de hijo: $childUuid", error)
                                     return@addSnapshotListener
                                 }
 
                                 if (snapshot != null && snapshot.exists()) {
                                     val usageData = snapshot.data ?: emptyMap()
-                                    Log.d("FIRESTORE", "Datos recibidos del hijo: $childUuid")
+                                    Log.d(TAG_APP_USAGE, "📊 Datos recibidos del hijo: $childUuid")
                                     onDataReceived(childUuid, usageData)
                                 }
                             }
@@ -200,7 +270,7 @@ class DataBaseUtils(context: Context) {
                 }
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error obteniendo hijos del padre", e)
+                Log.w(TAG_APP_USAGE, "Error obteniendo hijos del padre", e)
             }
     }
 
@@ -213,21 +283,22 @@ class DataBaseUtils(context: Context) {
             .get()
             .addOnSuccessListener { document ->
                 if (document.exists()) {
+                    Log.d(TAG_APP_USAGE, "📊 Datos de uso obtenidos para hijo: $childUuid")
                     callback(document.data)
                 } else {
-                    Log.w("FIRESTORE", "No hay datos de uso para el hijo: $childUuid")
+                    Log.w(TAG_APP_USAGE, "⚠️ No hay datos de uso para el hijo: $childUuid")
                     callback(null)
                 }
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error obteniendo datos de uso", e)
+                Log.w(TAG_APP_USAGE, "❌ Error obteniendo datos de uso", e)
                 callback(null)
             }
     }
 
-    fun getChildName(childUid: String, callback: (String) -> Unit) {
-        callback("Hijo")
-    }
+    // ============================================
+    // COLECCIÓN: blockedApps
+    // ============================================
 
     fun blockAppForChild(
         childUuid: String,
@@ -250,11 +321,11 @@ class DataBaseUtils(context: Context) {
             .document(documentId)
             .set(blockData)
             .addOnSuccessListener {
-                Log.d("FIRESTORE", "App bloqueada en blockedApps: $appName para hijo $childUuid")
+                Log.d(TAG_BLOCKED_APPS, "✅ App bloqueada: $appName para hijo $childUuid")
                 updateBlockedAppsInAppUsage(childUuid, onSuccess, onError)
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error bloqueando app", e)
+                Log.w(TAG_BLOCKED_APPS, "❌ Error bloqueando app", e)
                 onError(e.message ?: "Error desconocido")
             }
     }
@@ -271,35 +342,12 @@ class DataBaseUtils(context: Context) {
             .document(documentId)
             .delete()
             .addOnSuccessListener {
-                Log.d("FIRESTORE", "App desbloqueada en blockedApps: $packageName para hijo $childUuid")
+                Log.d(TAG_BLOCKED_APPS, "✅ App desbloqueada: $packageName para hijo $childUuid")
                 updateBlockedAppsInAppUsage(childUuid, onSuccess, onError)
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error desbloqueando app", e)
+                Log.w(TAG_BLOCKED_APPS, "❌ Error desbloqueando app", e)
                 onError(e.message ?: "Error desconocido")
-            }
-    }
-
-    fun listenToBlockedApps(
-        childUuid: String,
-        onUpdate: (List<String>) -> Unit
-    ) {
-        db.collection(collectionBlockedApps)
-            .whereEqualTo("childUID", childUuid)
-            .whereEqualTo("isBlocked", true)
-            .addSnapshotListener { snapshots, error ->
-                if (error != null) {
-                    Log.w("FIRESTORE", "Error escuchando apps bloqueadas", error)
-                    return@addSnapshotListener
-                }
-
-                if (snapshots != null) {
-                    val blockedPackages = snapshots.mapNotNull { doc ->
-                        doc.getString("packageName")
-                    }
-                    Log.d("FIRESTORE", "Apps bloqueadas actualizadas para hijo $childUuid: ${blockedPackages.size}")
-                    onUpdate(blockedPackages)
-                }
             }
     }
 
@@ -315,11 +363,11 @@ class DataBaseUtils(context: Context) {
                 val blockedPackages = documents.mapNotNull { doc ->
                     doc.getString("packageName")
                 }
-                Log.d("FIRESTORE", "Apps bloqueadas obtenidas para hijo $childUuid: ${blockedPackages.size}")
+                Log.d(TAG_BLOCKED_APPS, "📦 Apps bloqueadas obtenidas para hijo $childUuid: ${blockedPackages.size}")
                 callback(blockedPackages)
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error obteniendo apps bloqueadas", e)
+                Log.w(TAG_BLOCKED_APPS, "❌ Error obteniendo apps bloqueadas", e)
                 callback(emptyList())
             }
     }
@@ -339,75 +387,68 @@ class DataBaseUtils(context: Context) {
                 callback(isBlocked)
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error verificando si app está bloqueada", e)
+                Log.w(TAG_BLOCKED_APPS, "❌ Error verificando si app está bloqueada", e)
                 callback(false)
             }
     }
 
-    fun uploadInstalledApps(childUuid: String, installedApps: Map<String, String>) {
-        val data = hashMapOf<String, Any>(
-            "childUID" to childUuid,
-            "timestamp" to System.currentTimeMillis(),
-            "apps" to installedApps
-        )
-
-        db.collection("installedApps")
-            .document(childUuid)
-            .set(data)
-            .addOnSuccessListener {
-                Log.d("FIRESTORE", "Apps instaladas subidas para hijo: $childUuid (${installedApps.size} apps)")
-            }
-            .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error subiendo apps instaladas", e)
-            }
-    }
-
-    fun getInstalledApps(
+    private fun updateBlockedAppsInAppUsage(
         childUuid: String,
-        callback: (Map<String, String>) -> Unit
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
     ) {
-        db.collection("installedApps")
-            .document(childUuid)
-            .get()
-            .addOnSuccessListener { document ->
-                if (document.exists()) {
-                    @Suppress("UNCHECKED_CAST")
-                    val apps = document.get("apps") as? Map<String, String> ?: emptyMap()
-                    Log.d("FIRESTORE", "Apps instaladas obtenidas para hijo: $childUuid (${apps.size} apps)")
-                    callback(apps)
-                } else {
-                    Log.w("FIRESTORE", "No hay apps instaladas para el hijo: $childUuid")
-                    callback(emptyMap())
+        getBlockedAppsForChild(childUuid) { blockedPackages ->
+            val data = hashMapOf<String, Any>(
+                "blockedApps" to blockedPackages
+            )
+
+            db.collection(collectionAppUsage)
+                .document(childUuid)
+                .set(data, com.google.firebase.firestore.SetOptions.merge())
+                .addOnSuccessListener {
+                    Log.d(TAG_BLOCKED_APPS, "✅ Campo blockedApps actualizado en appUsage: ${blockedPackages.size} apps")
+                    onSuccess()
                 }
-            }
-            .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error obteniendo apps instaladas", e)
-                callback(emptyMap())
-            }
+                .addOnFailureListener { e ->
+                    Log.w(TAG_BLOCKED_APPS, "❌ Error actualizando blockedApps en appUsage", e)
+                    onError(e.message ?: "Error desconocido")
+                }
+        }
     }
 
-    fun listenToInstalledApps(
+    fun listenToBlockedAppsFromUsage(
         childUuid: String,
-        onUpdate: (Map<String, String>) -> Unit
+        onUpdate: (List<String>) -> Unit
     ) {
-        db.collection("installedApps")
+        db.collection(collectionAppUsage)
             .document(childUuid)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.w("FIRESTORE", "Error escuchando apps instaladas", error)
+                    Log.w(TAG_BLOCKED_APPS, "❌ Error escuchando apps bloqueadas desde appUsage", error)
                     return@addSnapshotListener
                 }
 
                 if (snapshot != null && snapshot.exists()) {
                     @Suppress("UNCHECKED_CAST")
-                    val apps = snapshot.get("apps") as? Map<String, String> ?: emptyMap()
-                    Log.d("FIRESTORE", "Apps instaladas actualizadas: $childUuid (${apps.size} apps)")
-                    onUpdate(apps)
+                    val blockedAppsField = snapshot.data?.get("blockedApps") as? List<String>
+
+                    if (blockedAppsField != null) {
+                        Log.d(TAG_BLOCKED_APPS, "✅ Apps bloqueadas desde appUsage: ${blockedAppsField.size}")
+                        onUpdate(blockedAppsField)
+                    } else {
+                        Log.d(TAG_BLOCKED_APPS, "⚠️ Campo 'blockedApps' no encontrado en appUsage")
+                        onUpdate(emptyList())
+                    }
+                } else {
+                    Log.d(TAG_BLOCKED_APPS, "⚠️ No hay documento appUsage para hijo $childUuid")
+                    onUpdate(emptyList())
                 }
             }
     }
 
-    // ============ FUNCIONES DE LÍMITES DE TIEMPO ============
+    // ============================================
+    // COLECCIÓN: timeLimits
+    // ============================================
 
     fun setTimeLimit(
         childUuid: String,
@@ -418,15 +459,13 @@ class DataBaseUtils(context: Context) {
         onSuccess: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
-        val documentId = if (packageName.isEmpty()) {
-            "${childUuid}_GLOBAL"
-        } else {
-            "${childUuid}_${packageName}"
-        }
+        // Usar "GLOBAL_LIMIT" en lugar de cadena vacía para el límite global
+        val normalizedPackageName = if (packageName.isEmpty()) "GLOBAL_LIMIT" else packageName
+        val documentId = "${childUuid}_${normalizedPackageName}"
 
         val timeLimitData = hashMapOf(
             "childUID" to childUuid,
-            "packageName" to packageName,
+            "packageName" to normalizedPackageName,
             "appName" to appName,
             "dailyLimitMinutes" to dailyLimitMinutes,
             "enabled" to enabled,
@@ -437,11 +476,11 @@ class DataBaseUtils(context: Context) {
             .document(documentId)
             .set(timeLimitData)
             .addOnSuccessListener {
-                Log.d("FIRESTORE", "Límite de tiempo establecido en timeLimits: $appName ($dailyLimitMinutes min)")
+                Log.d(TAG_TIME_LIMITS, "✅ Límite establecido: $appName ($dailyLimitMinutes min)")
                 updateTimeLimitsInAppUsage(childUuid, onSuccess, onError)
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error estableciendo límite de tiempo", e)
+                Log.w(TAG_TIME_LIMITS, "❌ Error estableciendo límite", e)
                 onError(e.message ?: "Error desconocido")
             }
     }
@@ -452,21 +491,19 @@ class DataBaseUtils(context: Context) {
         onSuccess: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
-        val documentId = if (packageName.isEmpty()) {
-            "${childUuid}_GLOBAL"
-        } else {
-            "${childUuid}_${packageName}"
-        }
+        // Usar "GLOBAL_LIMIT" en lugar de cadena vacía para el límite global
+        val normalizedPackageName = if (packageName.isEmpty()) "GLOBAL_LIMIT" else packageName
+        val documentId = "${childUuid}_${normalizedPackageName}"
 
         db.collection(collectionTimeLimits)
             .document(documentId)
             .delete()
             .addOnSuccessListener {
-                Log.d("FIRESTORE", "Límite de tiempo eliminado de timeLimits: $packageName")
+                Log.d(TAG_TIME_LIMITS, "✅ Límite eliminado: $packageName")
                 updateTimeLimitsInAppUsage(childUuid, onSuccess, onError)
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error eliminando límite de tiempo", e)
+                Log.w(TAG_TIME_LIMITS, "❌ Error eliminando límite", e)
                 onError(e.message ?: "Error desconocido")
             }
     }
@@ -479,25 +516,29 @@ class DataBaseUtils(context: Context) {
             .whereEqualTo("childUID", childUuid)
             .addSnapshotListener { snapshots, error ->
                 if (error != null) {
-                    Log.w("FIRESTORE", "Error escuchando límites de tiempo", error)
+                    Log.w(TAG_TIME_LIMITS, "❌ Error escuchando límites de tiempo", error)
                     return@addSnapshotListener
                 }
 
                 if (snapshots != null) {
                     val limits = snapshots.mapNotNull { doc ->
                         try {
+                            val packageName = doc.getString("packageName") ?: ""
+                            // Convertir "GLOBAL_LIMIT" de vuelta a cadena vacía
+                            val normalizedPackage = if (packageName == "GLOBAL_LIMIT") "" else packageName
+
                             TimeLimit(
-                                packageName = doc.getString("packageName") ?: "",
+                                packageName = normalizedPackage,
                                 dailyLimitMinutes = doc.getLong("dailyLimitMinutes")?.toInt() ?: 0,
                                 enabled = doc.getBoolean("enabled") ?: true,
                                 appName = doc.getString("appName") ?: ""
                             )
                         } catch (e: Exception) {
-                            Log.e("FIRESTORE", "Error parseando límite de tiempo", e)
+                            Log.e(TAG_TIME_LIMITS, "❌ Error parseando límite", e)
                             null
                         }
                     }
-                    Log.d("FIRESTORE", "Límites de tiempo actualizados: ${limits.size}")
+                    Log.d(TAG_TIME_LIMITS, "📊 Límites actualizados: ${limits.size}")
                     onUpdate(limits)
                 }
             }
@@ -513,48 +554,28 @@ class DataBaseUtils(context: Context) {
             .addOnSuccessListener { documents ->
                 val limits = documents.mapNotNull { doc ->
                     try {
+                        val packageName = doc.getString("packageName") ?: ""
+                        // Convertir "GLOBAL_LIMIT" de vuelta a cadena vacía
+                        val normalizedPackage = if (packageName == "GLOBAL_LIMIT") "" else packageName
+
                         TimeLimit(
-                            packageName = doc.getString("packageName") ?: "",
+                            packageName = normalizedPackage,
                             dailyLimitMinutes = doc.getLong("dailyLimitMinutes")?.toInt() ?: 0,
                             enabled = doc.getBoolean("enabled") ?: true,
                             appName = doc.getString("appName") ?: ""
                         )
                     } catch (e: Exception) {
-                        Log.e("FIRESTORE", "Error parseando límite de tiempo", e)
+                        Log.e(TAG_TIME_LIMITS, "❌ Error parseando límite", e)
                         null
                     }
                 }
-                Log.d("FIRESTORE", "Límites de tiempo obtenidos: ${limits.size}")
+                Log.d(TAG_TIME_LIMITS, "📊 Límites obtenidos: ${limits.size}")
                 callback(limits)
             }
             .addOnFailureListener { e ->
-                Log.w("FIRESTORE", "Error obteniendo límites de tiempo", e)
+                Log.w(TAG_TIME_LIMITS, "❌ Error obteniendo límites", e)
                 callback(emptyList())
             }
-    }
-
-    private fun updateBlockedAppsInAppUsage(
-        childUuid: String,
-        onSuccess: () -> Unit = {},
-        onError: (String) -> Unit = {}
-    ) {
-        getBlockedAppsForChild(childUuid) { blockedPackages ->
-            val data = hashMapOf<String, Any>(
-                "blockedApps" to blockedPackages
-            )
-            
-            db.collection(collectionAppUsage)
-                .document(childUuid)
-                .set(data, com.google.firebase.firestore.SetOptions.merge())
-                .addOnSuccessListener {
-                    Log.d("FIRESTORE", "✅ Campo blockedApps actualizado en appUsage: $blockedPackages")
-                    onSuccess()
-                }
-                .addOnFailureListener { e ->
-                    Log.w("FIRESTORE", "Error actualizando blockedApps en appUsage", e)
-                    onError(e.message ?: "Error desconocido")
-                }
-        }
     }
 
     private fun updateTimeLimitsInAppUsage(
@@ -572,7 +593,7 @@ class DataBaseUtils(context: Context) {
                     "enabled" to limit.enabled
                 )
                 
-                // Usar una clave especial para el límite global en lugar de cadena vacía
+                // Usar "GLOBAL_LIMIT" como clave en lugar de cadena vacía
                 val key = if (limit.packageName.isEmpty()) "GLOBAL_LIMIT" else limit.packageName
                 timeLimitsMap[key] = limitData
             }
@@ -585,51 +606,14 @@ class DataBaseUtils(context: Context) {
                 .document(childUuid)
                 .set(data, com.google.firebase.firestore.SetOptions.merge())
                 .addOnSuccessListener {
-                    Log.d("FIRESTORE", "✅ Campo timeLimits actualizado en appUsage: ${timeLimitsMap.keys}")
+                    Log.d(TAG_TIME_LIMITS, "✅ Campo timeLimits actualizado en appUsage: ${timeLimitsMap.size} límites")
                     onSuccess()
                 }
                 .addOnFailureListener { e ->
-                    Log.w("FIRESTORE", "Error actualizando timeLimits en appUsage", e)
+                    Log.w(TAG_TIME_LIMITS, "❌ Error actualizando timeLimits en appUsage", e)
                     onError(e.message ?: "Error desconocido")
                 }
         }
-    }
-
-    fun listenToBlockedAppsFromUsage(
-        childUuid: String,
-        onUpdate: (List<String>) -> Unit
-    ) {
-        db.collection(collectionAppUsage)
-            .document(childUuid)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.w("FIRESTORE", "Error escuchando apps bloqueadas desde appUsage", error)
-                    return@addSnapshotListener
-                }
-
-                if (snapshot != null && snapshot.exists()) {
-                    val data = snapshot.data ?: emptyMap()
-                    Log.d("FIRESTORE", "📦 Documento appUsage completo para $childUuid: ${data.keys}")
-
-                    val blockedPackages = mutableListOf<String>()
-
-                    @Suppress("UNCHECKED_CAST")
-                    val blockedAppsField = data["blockedApps"] as? List<String>
-
-                    if (blockedAppsField != null) {
-                        blockedPackages.addAll(blockedAppsField)
-                        Log.d("FIRESTORE", "✅ Apps bloqueadas encontradas en appUsage para hijo $childUuid: $blockedPackages")
-                    } else {
-                        Log.d("FIRESTORE", "⚠️ Campo 'blockedApps' no encontrado o vacío en appUsage para hijo $childUuid")
-                        Log.d("FIRESTORE", "Campos disponibles: ${data.keys.joinToString(", ")}")
-                    }
-
-                    onUpdate(blockedPackages)
-                } else {
-                    Log.d("FIRESTORE", "❌ No hay documento appUsage para hijo $childUuid")
-                    onUpdate(emptyList())
-                }
-            }
     }
 
     fun listenToTimeLimitsFromUsage(
@@ -640,21 +624,18 @@ class DataBaseUtils(context: Context) {
             .document(childUuid)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.w("FIRESTORE", "Error escuchando límites de tiempo desde appUsage", error)
+                    Log.w(TAG_TIME_LIMITS, "❌ Error escuchando límites desde appUsage", error)
                     return@addSnapshotListener
                 }
 
                 if (snapshot != null && snapshot.exists()) {
-                    val data = snapshot.data ?: emptyMap()
-                    Log.d("FIRESTORE", "📦 Buscando timeLimits en documento appUsage para $childUuid")
-
                     val limits = mutableListOf<TimeLimit>()
 
                     @Suppress("UNCHECKED_CAST")
-                    val timeLimitsField = data["timeLimits"] as? Map<String, Any>
+                    val timeLimitsField = snapshot.data?.get("timeLimits") as? Map<String, Any>
 
                     if (timeLimitsField != null) {
-                        Log.d("FIRESTORE", "✅ Campo timeLimits encontrado con ${timeLimitsField.size} límites")
+                        Log.d(TAG_TIME_LIMITS, "✅ Campo timeLimits encontrado: ${timeLimitsField.size} límites")
 
                         for ((packageName, limitData) in timeLimitsField) {
                             try {
@@ -666,27 +647,96 @@ class DataBaseUtils(context: Context) {
                                     val dailyLimitMinutes = (limitMap["dailyLimitMinutes"] as? Number)?.toInt() ?: 0
                                     val enabled = limitMap["enabled"] as? Boolean ?: true
 
+                                    // Convertir "GLOBAL_LIMIT" de vuelta a cadena vacía
+                                    val normalizedPackage = if (packageName == "GLOBAL_LIMIT") "" else packageName
+
                                     limits.add(TimeLimit(
-                                        packageName = packageName,
+                                        packageName = normalizedPackage,
                                         appName = appName,
                                         dailyLimitMinutes = dailyLimitMinutes,
                                         enabled = enabled
                                     ))
-                                    Log.d("FIRESTORE", "  📊 Límite: $appName ($packageName) = $dailyLimitMinutes min")
+                                    Log.d(TAG_TIME_LIMITS, "  📊 $appName ($packageName) = $dailyLimitMinutes min")
                                 }
                             } catch (e: Exception) {
-                                Log.e("FIRESTORE", "Error parseando límite de tiempo para $packageName", e)
+                                Log.e(TAG_TIME_LIMITS, "❌ Error parseando límite para $packageName", e)
                             }
                         }
-                        Log.d("FIRESTORE", "Límites de tiempo actualizados desde appUsage: ${limits.size}")
                     } else {
-                        Log.d("FIRESTORE", "⚠️ Campo 'timeLimits' no encontrado en appUsage para hijo $childUuid")
+                        Log.d(TAG_TIME_LIMITS, "⚠️ Campo 'timeLimits' no encontrado en appUsage")
                     }
 
                     onUpdate(limits)
                 } else {
-                    Log.d("FIRESTORE", "❌ No hay documento appUsage para hijo $childUuid")
+                    Log.d(TAG_TIME_LIMITS, "⚠️ No hay documento appUsage para hijo $childUuid")
                     onUpdate(emptyList())
+                }
+            }
+    }
+
+    // ============================================
+    // COLECCIÓN: installedApps
+    // ============================================
+
+    fun uploadInstalledApps(childUuid: String, installedApps: Map<String, String>) {
+        val data = hashMapOf<String, Any>(
+            "childUID" to childUuid,
+            "timestamp" to System.currentTimeMillis(),
+            "apps" to installedApps
+        )
+
+        db.collection(collectionInstalledApps)
+            .document(childUuid)
+            .set(data)
+            .addOnSuccessListener {
+                Log.d(TAG_INSTALLED_APPS, "✅ Apps instaladas subidas: ${installedApps.size} apps")
+            }
+            .addOnFailureListener { e ->
+                Log.w(TAG_INSTALLED_APPS, "❌ Error subiendo apps instaladas", e)
+            }
+    }
+
+    fun getInstalledApps(
+        childUuid: String,
+        callback: (Map<String, String>) -> Unit
+    ) {
+        db.collection(collectionInstalledApps)
+            .document(childUuid)
+            .get()
+            .addOnSuccessListener { document ->
+                if (document.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val apps = document.get("apps") as? Map<String, String> ?: emptyMap()
+                    Log.d(TAG_INSTALLED_APPS, "📦 Apps instaladas obtenidas: ${apps.size}")
+                    callback(apps)
+                } else {
+                    Log.w(TAG_INSTALLED_APPS, "⚠️ No hay apps instaladas para el hijo: $childUuid")
+                    callback(emptyMap())
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.w(TAG_INSTALLED_APPS, "❌ Error obteniendo apps instaladas", e)
+                callback(emptyMap())
+            }
+    }
+
+    fun listenToInstalledApps(
+        childUuid: String,
+        onUpdate: (Map<String, String>) -> Unit
+    ) {
+        db.collection(collectionInstalledApps)
+            .document(childUuid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w(TAG_INSTALLED_APPS, "❌ Error escuchando apps instaladas", error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshot != null && snapshot.exists()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val apps = snapshot.get("apps") as? Map<String, String> ?: emptyMap()
+                    Log.d(TAG_INSTALLED_APPS, "📦 Apps instaladas actualizadas: ${apps.size}")
+                    onUpdate(apps)
                 }
             }
     }
