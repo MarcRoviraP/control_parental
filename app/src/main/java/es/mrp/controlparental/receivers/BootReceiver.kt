@@ -20,120 +20,168 @@ class BootReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "BootReceiver"
+
+        private fun logD(message: String) {
+            val lineNumber = Thread.currentThread().stackTrace[3].lineNumber
+            Log.d(TAG, "[Línea $lineNumber] $message")
+        }
+
+        private fun logW(message: String) {
+            val lineNumber = Thread.currentThread().stackTrace[3].lineNumber
+            Log.w(TAG, "[Línea $lineNumber] $message")
+        }
+
+        private fun logE(message: String, throwable: Throwable? = null) {
+            val lineNumber = Thread.currentThread().stackTrace[3].lineNumber
+            if (throwable != null) {
+                Log.e(TAG, "[Línea $lineNumber] $message", throwable)
+            } else {
+                Log.e(TAG, "[Línea $lineNumber] $message")
+            }
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
-            Log.d(TAG, "📢 ACTION_BOOT_COMPLETED recibido")
+            logD("📢 ACTION_BOOT_COMPLETED recibido | Intent válido")
         }
-        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        Log.d(TAG, "🔔 BOOTRECEIVER ACTIVADO!!!")
-        Log.d(TAG, "Intent recibido: ${intent?.action}")
-        Log.d(TAG, "Timestamp: ${System.currentTimeMillis()}")
-        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logD("🔔 BOOTRECEIVER ACTIVADO!!! | Thread: ${Thread.currentThread().name}")
+        logD("Intent recibido: ${intent?.action} | Timestamp: ${System.currentTimeMillis()}")
+        logD("Context: ${context.javaClass.simpleName} | Package: ${context.packageName}")
+        logD("Dispositivo: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} | SDK: ${android.os.Build.VERSION.SDK_INT}")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         // Usar goAsync() para operaciones largas
         val pendingResult = goAsync()
+        logD("goAsync() llamado | PendingResult obtenido: ${pendingResult.hashCode()}")
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 when (intent?.action) {
                     Intent.ACTION_BOOT_COMPLETED -> {
-                        Log.d(TAG, "📱 Dispositivo iniciado, esperando 5 segundos...")
+                        logD("📱 Dispositivo iniciado (ACTION_BOOT_COMPLETED) | Esperando 5 segundos para estabilizar sistema...")
                         delay(5000) // Aumentar el delay a 5 segundos
 
+                        logD("Delay completado | Iniciando servicios...")
                         startServicesWithRetry(context)
 
                         // NUEVO: Programar WorkManager como respaldo
+                        logD("Programando WorkManager como respaldo...")
                         scheduleWorkerBackup(context)
                     }
                     Intent.ACTION_BOOT_COMPLETED,
                     Intent.ACTION_LOCKED_BOOT_COMPLETED,
                     "android.intent.action.QUICKBOOT_POWERON",
                     "com.htc.intent.action.QUICKBOOT_POWERON" -> {
-                        Log.d(TAG, "📱 Dispositivo iniciado, esperando 5 segundos...")
+                        logD("📱 Dispositivo iniciado (${intent.action}) | Esperando 5 segundos...")
                         delay(5000)
 
+                        logD("Delay completado | Iniciando servicios...")
                         startServicesWithRetry(context)
                         scheduleWorkerBackup(context)
                     }
                     else -> {
-                        Log.w(TAG, "⚠️ Intent action no manejado: ${intent?.action}")
-                        // Aun así, intentar iniciar los servicios por si acaso
-                        Log.d(TAG, "🔄 Intentando iniciar servicios de todas formas...")
+                        logW("⚠️ Intent action no reconocido: ${intent?.action}")
+                        logW("Intentando iniciar servicios de todas formas como medida de seguridad...")
                         delay(5000)
                         startServicesWithRetry(context)
                         scheduleWorkerBackup(context)
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Exception en onReceive", e)
+                logE("❌ Exception crítica en onReceive | Tipo: ${e.javaClass.simpleName} | Mensaje: ${e.message}", e)
+                logE("Stack trace completo: ${e.stackTraceToString()}")
             } finally {
-                Log.d(TAG, "🏁 Finalizando BootReceiver.onReceive()")
+                logD("🏁 Finalizando BootReceiver.onReceive() | Llamando a pendingResult.finish()")
                 pendingResult.finish()
             }
         }
     }
 
     private suspend fun startServicesWithRetry(context: Context) {
+        logD("═══════════════════════════════════════════")
+        logD("Iniciando startServicesWithRetry() | Intentos configurados: 3")
+
         repeat(3) { attempt ->
             try {
-                Log.d(TAG, "🔄 Intento ${attempt + 1} de 3 para iniciar servicios...")
+                logD("───────────────────────────────────────")
+                logD("🔄 Intento ${attempt + 1} de 3 para iniciar servicios | Timestamp: ${System.currentTimeMillis()}")
 
                 // Verificar si hay UUID guardado
                 val sharedPref = context.getSharedPreferences("preferences", Context.MODE_PRIVATE)
                 val uuid = sharedPref.getString("uuid", null)
 
-                Log.d(TAG, "SharedPreferences UUID: ${uuid ?: "null"}")
+                logD("SharedPreferences consultadas | Path: ${context.filesDir.absolutePath}")
+                logD("UUID presente: ${uuid != null} | UUID: ${uuid?.take(8) ?: "NULL"}...")
 
                 if (uuid != null) {
-                    Log.d(TAG, "✅ UUID encontrado: $uuid")
+                    logD("✅ UUID encontrado válido: ${uuid.take(8)}... | Longitud: ${uuid.length} caracteres")
+                    logD("Procediendo a iniciar AppUsageMonitorService...")
 
                     // 1. Iniciar servicio de monitoreo
                     try {
+                        logD("Creando Intent para AppUsageMonitorService...")
                         val monitorIntent = Intent(context, AppUsageMonitorService::class.java)
                         monitorIntent.putExtra("started_from_boot", true)
 
+                        logD("Intent creado | Extras: started_from_boot=true")
+
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            logD("Android O+ (SDK ${Build.VERSION.SDK_INT}) | Usando startForegroundService")
                             context.startForegroundService(monitorIntent)
                         } else {
+                            logD("Android pre-O (SDK ${Build.VERSION.SDK_INT}) | Usando startService")
                             context.startService(monitorIntent)
                         }
-                        Log.d(TAG, "✅ AppUsageMonitorService iniciado")
+                        logD("✅ AppUsageMonitorService iniciado correctamente")
                     } catch (e: Exception) {
-                        Log.e(TAG, "❌ Error iniciando AppUsageMonitorService", e)
+                        logE("❌ Error iniciando AppUsageMonitorService | Tipo: ${e.javaClass.simpleName}", e)
+                        logE("Mensaje: ${e.message} | Causa: ${e.cause?.message}")
                     }
                 } else {
-                    Log.w(TAG, "⚠️ No hay UUID guardado, no se inicia AppUsageMonitorService")
+                    logW("⚠️ No hay UUID guardado | AppUsageMonitorService NO será iniciado")
+                    logW("El usuario debe configurar la app primero")
                 }
 
                 // 2. Iniciar servicio de bloqueo (siempre)
                 try {
+                    logD("Creando Intent para AppBlockerOverlayService (siempre se inicia)...")
                     val blockerIntent = Intent(context, AppBlockerOverlayService::class.java)
                     blockerIntent.putExtra("auto_start", true)
 
+                    logD("Intent creado | Extras: auto_start=true")
+
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        logD("Android O+ (SDK ${Build.VERSION.SDK_INT}) | Usando startForegroundService")
                         context.startForegroundService(blockerIntent)
                     } else {
+                        logD("Android pre-O (SDK ${Build.VERSION.SDK_INT}) | Usando startService")
                         context.startService(blockerIntent)
                     }
-                    Log.d(TAG, "✅ AppBlockerOverlayService iniciado")
+                    logD("✅ AppBlockerOverlayService iniciado correctamente")
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ Error iniciando AppBlockerOverlayService", e)
+                    logE("❌ Error iniciando AppBlockerOverlayService | Tipo: ${e.javaClass.simpleName}", e)
+                    logE("Mensaje: ${e.message} | Causa: ${e.cause?.message}")
                 }
 
-                Log.d(TAG, "✅ Servicios iniciados correctamente en intento ${attempt + 1}")
+                logD("✅ Servicios iniciados correctamente en intento ${attempt + 1}")
+                logD("═══════════════════════════════════════════")
                 return // Éxito, salir del bucle
 
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Error en intento ${attempt + 1}: ${e.message}", e)
+                logE("❌ Error en intento ${attempt + 1} | Tipo: ${e.javaClass.simpleName} | Mensaje: ${e.message}", e)
                 if (attempt < 2) {
+                    logW("Esperando 3 segundos antes del siguiente intento...")
                     delay(3000) // Esperar 3 segundos antes del siguiente intento
+                } else {
+                    logE("❌ FALLO CRÍTICO: Todos los intentos agotados (3/3)")
                 }
             }
         }
 
-        Log.e(TAG, "❌ Falló después de 3 intentos")
+        logE("❌ Falló después de 3 intentos | Los servicios NO pudieron iniciarse")
+        logD("═══════════════════════════════════════════")
     }
 
     /**
@@ -142,16 +190,18 @@ class BootReceiver : BroadcastReceiver() {
      */
     private fun scheduleWorkerBackup(context: Context) {
         try {
-            Log.d(TAG, "📅 Programando WorkManager como respaldo...")
+            logD("📅 Programando WorkManager como respaldo...")
+            logD("Delay configurado: 10 segundos")
 
             val workRequest = OneTimeWorkRequestBuilder<StartupWorker>()
                 .setInitialDelay(10, TimeUnit.SECONDS)
                 .build()
 
             WorkManager.getInstance(context).enqueue(workRequest)
-            Log.d(TAG, "✅ WorkManager programado exitosamente")
+            logD("✅ WorkManager programado exitosamente | WorkRequest ID: ${workRequest.id}")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error programando WorkManager", e)
+            logE("❌ Error programando WorkManager | Tipo: ${e.javaClass.simpleName}", e)
+            logE("Mensaje: ${e.message}")
         }
     }
 }

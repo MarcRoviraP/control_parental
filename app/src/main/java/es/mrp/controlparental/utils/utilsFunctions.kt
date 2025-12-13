@@ -14,6 +14,7 @@ import es.mrp.controlparental.models.AppPackageClass
 import es.mrp.controlparental.receivers.ParentalControlAdminReceiver
     import java.time.ZoneId
     import java.time.ZonedDateTime
+    import java.util.Calendar
 
 var UUID: String? = "uuid"
     val blockedApps = mutableSetOf<String>()
@@ -35,7 +36,14 @@ var UUID: String? = "uuid"
 
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - 1000 * 60 * 60 * 24
+
+        // Calcular el inicio del día (00:00:00) en lugar de las últimas 24 horas
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startTime = calendar.timeInMillis
 
         val usageStatsList: List<UsageStats> =
             usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)

@@ -17,10 +17,11 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="⏱️ Configurar Límite de Tiempo"
-            android:textSize="20sp"
+            android:textSize="22sp"
             android:textStyle="bold"
             android:textColor="?android:attr/textColorPrimary"
-            android:layout_marginBottom="8dp"/>
+            android:layout_marginBottom="6dp"
+            android:gravity="center"/>
 
         <TextView
             android:layout_width="match_parent"
@@ -28,22 +29,23 @@
             android:text="Establece un límite diario de uso para controlar el tiempo de pantalla"
             android:textSize="14sp"
             android:textColor="?android:attr/textColorSecondary"
-            android:layout_marginBottom="24dp"/>
+            android:layout_marginBottom="20dp"
+            android:gravity="center"/>
 
         <!-- Selector de aplicación -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="2dp"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="3dp"
             app:cardBackgroundColor="?attr/colorSurface">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="20dp">
 
                 <TextView
                     android:layout_width="match_parent"
@@ -51,8 +53,52 @@
                     android:layout_marginBottom="12dp"
                     android:text="📱 Aplicación"
                     android:textColor="?android:attr/textColorPrimary"
-                    android:textSize="14sp"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
+
+                <!-- TextView para mostrar la app en modo edición -->
+                <androidx.cardview.widget.CardView
+                    android:id="@+id/cardAppNameDisplay"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone"
+                    app:cardCornerRadius="8dp"
+                    app:cardElevation="0dp"
+                    app:cardBackgroundColor="?attr/colorPrimary"
+                    android:backgroundTint="#1A000000"
+                    android:layout_marginBottom="8dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:padding="12dp"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:id="@+id/textAppIcon"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:gravity="center"
+                            android:text="📱"
+                            android:textSize="24sp"
+                            android:background="@drawable/circle_background"
+                            android:backgroundTint="?attr/colorSurface"/>
+
+                        <TextView
+                            android:id="@+id/textAppNameDisplay"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="12dp"
+                            android:text="Nombre de la App"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="?android:attr/textColorPrimary"/>
+
+                    </LinearLayout>
+
+                </androidx.cardview.widget.CardView>
 
                 <Spinner
                     android:id="@+id/spinnerApp"
@@ -65,7 +111,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="10dp"
                     android:text="💡 Usa 'Límite Global' para controlar el tiempo total de todas las apps"
                     android:textColor="?android:attr/textColorSecondary"
                     android:textSize="12sp" />
@@ -78,94 +124,148 @@
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="2dp"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="3dp"
             app:cardBackgroundColor="?attr/colorSurface">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="20dp">
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="12dp"
+                    android:layout_marginBottom="16dp"
                     android:text="⏱️ Límite Diario"
                     android:textColor="?android:attr/textColorPrimary"
-                    android:textSize="14sp"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
+
+                <!-- Display del tiempo total -->
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="0dp"
+                    app:cardBackgroundColor="?attr/colorPrimary"
+                    android:backgroundTint="#1A000000">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp"
+                        android:gravity="center">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Tiempo configurado"
+                            android:textSize="12sp"
+                            android:textColor="?android:attr/textColorSecondary"
+                            android:layout_marginBottom="4dp"/>
+
+                        <TextView
+                            android:id="@+id/textTimeDisplay"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="00:00"
+                            android:textSize="32sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorPrimary"
+                            android:fontFamily="monospace"/>
+
+                    </LinearLayout>
+
+                </androidx.cardview.widget.CardView>
 
                 <!-- Horas y minutos -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    android:gravity="center_vertical"
+                    android:gravity="center"
                     android:orientation="horizontal">
 
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginEnd="8dp"
+                        android:layout_marginEnd="12dp"
                         android:layout_weight="1"
                         android:orientation="vertical">
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginBottom="4dp"
+                            android:layout_marginBottom="8dp"
                             android:text="Horas"
                             android:textColor="?android:attr/textColorSecondary"
-                            android:textSize="12sp" />
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:gravity="center"/>
 
                         <EditText
                             android:id="@+id/editHours"
                             android:layout_width="match_parent"
-                            android:layout_height="56dp"
+                            android:layout_height="64dp"
                             android:autofillHints="00"
+                            android:background="@android:drawable/editbox_background"
+                            android:fontFamily="monospace"
                             android:gravity="center"
+                            android:hint="00"
                             android:inputType="number"
                             android:maxLength="2"
-                            android:textSize="18sp" />
+                            android:textColor="#000000"
+                            android:textSize="24sp"
+                            android:textStyle="bold" />
 
                     </LinearLayout>
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="20dp"
+                        android:layout_marginTop="28dp"
                         android:text=":"
                         android:textColor="?android:attr/textColorPrimary"
-                        android:textSize="24sp"
-                        android:textStyle="bold" />
+                        android:textSize="32sp"
+                        android:textStyle="bold"
+                        android:fontFamily="monospace"/>
 
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="12dp"
                         android:layout_weight="1"
                         android:orientation="vertical">
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginBottom="4dp"
+                            android:layout_marginBottom="8dp"
                             android:text="Minutos"
                             android:textColor="?android:attr/textColorSecondary"
-                            android:textSize="12sp" />
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:gravity="center"/>
 
                         <EditText
                             android:id="@+id/editMinutes"
                             android:layout_width="match_parent"
-                            android:layout_height="56dp"
+                            android:layout_height="64dp"
                             android:autofillHints="00"
+                            android:background="@android:drawable/editbox_background"
+                            android:fontFamily="monospace"
                             android:gravity="center"
+                            android:hint="00"
                             android:inputType="number"
                             android:maxLength="2"
-                            android:textSize="18sp" />
+                            android:textColor="#000000"
+                            android:textSize="24sp"
+                            android:textStyle="bold" />
 
                     </LinearLayout>
 
@@ -175,10 +275,10 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
-                    android:text="⚡ Sugerencias rápidas:"
+                    android:layout_marginBottom="10dp"
+                    android:text="⚡ Sugerencias rápidas"
                     android:textColor="?android:attr/textColorPrimary"
-                    android:textSize="12sp"
+                    android:textSize="13sp"
                     android:textStyle="bold" />
 
                 <!-- Primera fila de botones -->
@@ -192,21 +292,21 @@
                         android:id="@+id/btn30min"
                         style="@style/ButtonTextStyle"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="8dp"
+                        android:layout_height="48dp"
+                        android:layout_marginEnd="6dp"
                         android:layout_weight="1"
                         android:text="30 min"
-                        android:textSize="13sp" />
+                        android:textSize="12sp" />
 
                     <Button
                         android:id="@+id/btn1hour"
                         style="@style/ButtonTextStyle"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="6dp"
                         android:layout_weight="1"
                         android:text="1 hora"
-                        android:textSize="13sp" />
+                        android:textSize="12sp" />
 
                 </LinearLayout>
 
@@ -220,21 +320,21 @@
                         android:id="@+id/btn2hours"
                         style="@style/ButtonTextStyle"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="8dp"
+                        android:layout_height="48dp"
+                        android:layout_marginEnd="6dp"
                         android:layout_weight="1"
                         android:text="2 horas"
-                        android:textSize="13sp" />
+                        android:textSize="12sp" />
 
                     <Button
                         android:id="@+id/btn4hours"
                         style="@style/ButtonTextStyle"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="6dp"
                         android:layout_weight="1"
                         android:text="4 horas"
-                        android:textSize="13sp" />
+                        android:textSize="12sp" />
 
                 </LinearLayout>
 
@@ -246,15 +346,15 @@
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="2dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="3dp"
             app:cardBackgroundColor="?attr/colorSurface">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:padding="16dp"
+                android:padding="20dp"
                 android:gravity="center_vertical">
 
                 <LinearLayout
@@ -268,7 +368,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="✅ Activar Límite"
-                        android:textSize="14sp"
+                        android:textSize="15sp"
                         android:textStyle="bold"
                         android:textColor="?android:attr/textColorPrimary"/>
 

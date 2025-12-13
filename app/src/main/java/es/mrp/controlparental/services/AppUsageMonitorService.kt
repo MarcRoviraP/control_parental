@@ -42,66 +42,106 @@ class AppUsageMonitorService : Service() {
         private const val INSTALLED_APPS_UPDATE_INTERVAL = 300000L // 5 minutos para apps instaladas
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "app_usage_monitor_channel"
+
+        private fun logD(message: String) {
+            val lineNumber = Thread.currentThread().stackTrace[3].lineNumber
+            Log.d(TAG, "[Línea $lineNumber] $message")
+        }
+
+        private fun logW(message: String) {
+            val lineNumber = Thread.currentThread().stackTrace[3].lineNumber
+            Log.w(TAG, "[Línea $lineNumber] $message")
+        }
+
+        private fun logE(message: String, throwable: Throwable? = null) {
+            val lineNumber = Thread.currentThread().stackTrace[3].lineNumber
+            if (throwable != null) {
+                Log.e(TAG, "[Línea $lineNumber] $message", throwable)
+            } else {
+                Log.e(TAG, "[Línea $lineNumber] $message")
+            }
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "🚀 Servicio de monitoreo iniciado - onCreate()")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logD("🚀 Servicio de monitoreo iniciado - onCreate() | Thread: ${Thread.currentThread().name}")
+        logD("Timestamp: ${System.currentTimeMillis()} | PID: ${android.os.Process.myPid()}")
 
         // IMPORTANTE: Iniciar en foreground INMEDIATAMENTE si es Android O+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Log.d(TAG, "📱 Android O+ detectado - Iniciando en foreground...")
+            logD("📱 Android O+ detectado (SDK ${Build.VERSION.SDK_INT}) | Iniciando en foreground obligatorio...")
             try {
                 startAsForegroundService()
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Error iniciando foreground service", e)
+                logE("❌ Error CRÍTICO iniciando foreground service | Tipo: ${e.javaClass.simpleName}", e)
+                logE("Mensaje: ${e.message} | Causa: ${e.cause?.message}")
             }
+        } else {
+            logD("Android pre-O (SDK ${Build.VERSION.SDK_INT}) | Foreground no obligatorio")
         }
 
+        logD("Inicializando DataBaseUtils...")
         dbUtils = DataBaseUtils(this)
+        logD("✅ DataBaseUtils inicializado")
 
         // Obtener el UUID del hijo desde SharedPreferences
         val sharedPref = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         childUuid = sharedPref.getString(UUID_KEY, null)
 
+        logD("SharedPreferences consultadas | UUID presente: ${childUuid != null}")
+
         if (childUuid != null) {
-            Log.d(TAG, "✅ UUID encontrado: $childUuid - Iniciando monitoreo")
+            logD("✅ UUID encontrado válido: ${childUuid?.take(8)}... | Longitud: ${childUuid?.length} caracteres")
+            logD("Iniciando secuencia de monitoreo completo...")
 
             // Verificar si cambió el día y reiniciar contadores si es necesario
+            logD("1. Verificando cambio de día...")
             checkAndResetDailyUsageIfNeeded()
 
             // Enviar apps instaladas inmediatamente
+            logD("2. Subiendo apps instaladas...")
             uploadInstalledApps()
 
             // Iniciar monitoreo periódico de apps instaladas
+            logD("3. Iniciando monitoreo periódico de apps instaladas (cada ${INSTALLED_APPS_UPDATE_INTERVAL/1000}s)...")
             startInstalledAppsMonitoring()
 
+            logD("4. Iniciando monitoreo principal de uso (cada ${UPDATE_INTERVAL/1000}s)...")
             startMonitoring()
+
+            logD("✅ Servicio completamente inicializado y activo")
         } else {
-            Log.w(TAG, "⚠️ No se encontró UUID del hijo, no se puede monitorear")
+            logW("⚠️ No se encontró UUID del hijo en SharedPreferences | No se puede monitorear")
+            logW("El usuario debe vincular el dispositivo primero")
         }
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     }
 
     private fun startAsForegroundService() {
         try {
-            Log.d(TAG, "📝 Creando canal de notificación...")
+            logD("📝 Paso 1/3: Creando canal de notificación...")
             createNotificationChannel()
 
-            Log.d(TAG, "🔔 Creando notificación...")
+            logD("🔔 Paso 2/3: Creando notificación...")
             val notification = createNotification()
+            logD("Notificación creada | ID: $NOTIFICATION_ID | Channel: $CHANNEL_ID")
 
-            Log.d(TAG, "🎯 Llamando a startForeground()...")
+            logD("🎯 Paso 3/3: Llamando a startForeground()...")
             startForeground(NOTIFICATION_ID, notification)
 
-            Log.d(TAG, "✅ Servicio iniciado en modo foreground exitosamente")
+            logD("✅ Servicio iniciado en modo foreground exitosamente | Notificación visible")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error en startAsForegroundService", e)
+            logE("❌ Error en startAsForegroundService | Tipo: ${e.javaClass.simpleName}", e)
+            logE("Stack trace: ${e.stackTraceToString()}")
             throw e
         }
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            logD("Creando NotificationChannel para Android O+...")
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Monitoreo de Apps",
@@ -113,6 +153,7 @@ class AppUsageMonitorService : Service() {
 
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager?.createNotificationChannel(channel)
+            logD("✅ Canal creado | ID: $CHANNEL_ID | Importancia: LOW")
         }
     }
 
@@ -127,16 +168,27 @@ class AppUsageMonitorService : Service() {
     }
 
     private fun startMonitoring() {
+        logD("Lanzando corrutina de monitoreo en serviceScope...")
         serviceScope.launch {
+            logD("Corrutina de monitoreo iniciada | Thread: ${Thread.currentThread().name}")
+            var cycleCount = 0
             while (true) {
                 try {
+                    cycleCount++
+                    logD("───────── Ciclo de monitoreo #$cycleCount ─────────")
+
                     // Verificar cambio de día en cada ciclo
                     checkAndResetDailyUsageIfNeeded()
 
-                    collectAndUploadUsageData()
+                    // ⚠️ NOTA: La subida de datos de uso ahora la maneja BlockService
+                    // que tiene tracking en tiempo real más preciso con dailyUsage
+                    logD("✅ Ciclo #$cycleCount completado | BlockService gestiona la subida de datos")
+                    logD("Próximo ciclo en ${UPDATE_INTERVAL/1000}s")
+
                     delay(UPDATE_INTERVAL)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error en el monitoreo", e)
+                    logE("❌ Error en ciclo de monitoreo #$cycleCount | Tipo: ${e.javaClass.simpleName}", e)
+                    logE("Mensaje: ${e.message}")
                     delay(UPDATE_INTERVAL)
                 }
             }
@@ -147,13 +199,18 @@ class AppUsageMonitorService : Service() {
      * Inicia el monitoreo periódico de apps instaladas
      */
     private fun startInstalledAppsMonitoring() {
+        logD("Lanzando corrutina de monitoreo de apps instaladas...")
         serviceScope.launch {
+            logD("Corrutina iniciada | Intervalo: ${INSTALLED_APPS_UPDATE_INTERVAL/1000}s")
+            var updateCount = 0
             while (true) {
                 try {
                     delay(INSTALLED_APPS_UPDATE_INTERVAL)
+                    updateCount++
+                    logD("🔄 Actualización #$updateCount de apps instaladas...")
                     uploadInstalledApps()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error actualizando apps instaladas", e)
+                    logE("❌ Error actualizando apps instaladas #$updateCount", e)
                 }
             }
         }
@@ -163,9 +220,13 @@ class AppUsageMonitorService : Service() {
      * Obtiene y sube la lista de apps instaladas a Firestore
      */
     private fun uploadInstalledApps() {
-        if (childUuid == null) return
+        if (childUuid == null) {
+            logW("UUID nulo | No se pueden subir apps instaladas")
+            return
+        }
 
         try {
+            logD("Obteniendo lista de apps instaladas...")
             val pm = packageManager
             val installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
                 .filter { appInfo ->
@@ -184,82 +245,16 @@ class AppUsageMonitorService : Service() {
             // Filtrar la propia app de control parental
             installedApps.remove(applicationContext.packageName)
 
-            Log.d(TAG, "📦 Apps instaladas detectadas: ${installedApps.size}")
+            logD("📦 Apps instaladas detectadas: ${installedApps.size} apps de usuario")
+            logD("Subiendo a Firestore para UUID: ${childUuid?.take(8)}...")
             dbUtils.uploadInstalledApps(childUuid!!, installedApps)
+            logD("✅ Apps instaladas subidas exitosamente")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error obteniendo apps instaladas", e)
+            logE("❌ Error obteniendo/subiendo apps instaladas | Tipo: ${e.javaClass.simpleName}", e)
+            logE("Mensaje: ${e.message}")
         }
     }
 
-    private fun collectAndUploadUsageData() {
-        if (childUuid == null) return
-
-        // Verificar si tenemos permiso de uso de apps
-        if (!hasUsageAccess(this)) {
-            Log.w(TAG, "No hay permiso de uso de apps")
-            return
-        }
-
-        // Obtener las estadísticas de uso desde las 00:00 del día actual
-        val usageStatsList = getUsageStats()
-
-        if (usageStatsList.isNotEmpty()) {
-            val usageData = hashMapOf<String, Any>()
-            val pm = packageManager
-
-            // IMPORTANTE: Usar el timestamp actual para saber cuándo se hizo esta captura
-            val captureTimestamp = System.currentTimeMillis()
-
-            // Convertir las estadísticas de uso a un formato serializable
-            // Agrupar por packageName y seleccionar la entrada con mayor totalTimeInForeground por paquete
-            val uniqueStats = usageStatsList
-                .filter { it.totalTimeInForeground > 0 }
-                .groupBy { it.packageName }
-                .mapNotNull { (_, list) -> list.maxByOrNull { it.totalTimeInForeground } }
-                .sortedByDescending { it.totalTimeInForeground }
-                .take(20) // Solo las 20 apps más usadas únicas por paquete
-
-            uniqueStats.forEachIndexed { index, stat ->
-                try {
-                    // Filtrado: omitir paquetes no relevantes (sistema, launcher, ajustes, etc.)
-                    if (isExcludedPackage(pm, stat.packageName)) {
-                        Log.d(TAG, "Omitiendo paquete: ${stat.packageName}")
-                        return@forEachIndexed
-                    }
-
-                    val appInfo = pm.getApplicationInfo(stat.packageName, 0)
-                    val appName = pm.getApplicationLabel(appInfo).toString()
-
-                    // Evitar nombres vacíos o nulos
-                    if (appName.isBlank()) {
-                        Log.d(TAG, "App con nombre vacío omitida: ${stat.packageName}")
-                        return@forEachIndexed
-                    }
-
-                    usageData["app_$index"] = hashMapOf(
-                        "packageName" to stat.packageName,
-                        "appName" to appName,
-                        "timeInForeground" to stat.totalTimeInForeground,
-                        "lastTimeUsed" to stat.lastTimeUsed,
-                        "capturedAt" to captureTimestamp // Timestamp de esta captura
-                    )
-                } catch (e: PackageManager.NameNotFoundException) {
-                    Log.w(TAG, "App no encontrada: ${stat.packageName}")
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error procesando app ${stat.packageName}", e)
-                }
-            }
-
-            // Subir a Firestore con el timestamp de captura
-            if (usageData.isNotEmpty()) {
-                usageData["lastCaptureTime"] = captureTimestamp // Para mostrar "última actualización"
-                dbUtils.uploadAppUsage(childUuid!!, usageData)
-                Log.d(TAG, "Datos de uso subidos: ${usageData.size} apps monitoreadas")
-            }
-        } else {
-            Log.d(TAG, "No hay datos de uso para subir")
-        }
-    }
 
     /**
      * Decide si un paquete debe excluirse del reporte de uso.
@@ -374,48 +369,65 @@ class AppUsageMonitorService : Service() {
 
         Log.d(TAG, "📊 Obteniendo estadísticas desde las 00:00 del día actual")
 
-        return usageStatsManager.queryUsageStats(
+        val usageStatsList: List<UsageStats> = usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_DAILY,
             startTime,
             endTime
         ) ?: emptyList()
+
+        for (stat in usageStatsList) {
+            Log.d(
+                TAG,
+                "Uso: ${stat.packageName} - Tiempo en foreground: ${stat.totalTimeInForeground} ms"
+            )
+        }
+        return usageStatsList
     }
 
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        Log.d(TAG, "📨 onStartCommand llamado")
-        Log.d(TAG, "Timestamp: ${System.currentTimeMillis()}")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logD("📨 onStartCommand llamado | StartId: $startId | Flags: $flags")
+        logD("Timestamp: ${System.currentTimeMillis()} | Thread: ${Thread.currentThread().name}")
 
         val startedFromBoot = intent?.getBooleanExtra("started_from_boot", false) ?: false
         val startedFromWorker = intent?.getBooleanExtra("started_from_worker", false) ?: false
 
         when {
-            startedFromBoot -> Log.d(TAG, "🔄 ⭐ SERVICIO INICIADO DESDE BOOTRECEIVER ⭐")
-            startedFromWorker -> Log.d(TAG, "🔄 ⭐ SERVICIO INICIADO DESDE WORKMANAGER ⭐")
-            else -> Log.d(TAG, "▶️ Servicio iniciado manualmente desde la app")
+            startedFromBoot -> logD("🔄 ⭐ SERVICIO INICIADO DESDE BOOTRECEIVER ⭐")
+            startedFromWorker -> logD("🔄 ⭐ SERVICIO INICIADO DESDE WORKMANAGER ⭐")
+            else -> logD("▶️ Servicio iniciado manualmente desde la app o sistema")
         }
 
-        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logD("Intent extras: started_from_boot=$startedFromBoot, started_from_worker=$startedFromWorker")
 
         // Si no se había iniciado en onCreate, intentar aquí
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
+                logD("Verificando si servicio está en foreground...")
                 startAsForegroundService()
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Error en onStartCommand al iniciar foreground", e)
+                logE("❌ Error en onStartCommand al iniciar foreground", e)
             }
         }
+
+        logD("Retornando START_STICKY (servicio se reinicia si es terminado)")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         return START_STICKY // El servicio se reinicia si es terminado por el sistema
     }
 
     override fun onBind(intent: Intent?): IBinder? {
+        logD("onBind() llamado | Intent: ${intent?.action}")
         return null
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "Servicio de monitoreo detenido")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logD("🛑 Servicio de monitoreo detenido - onDestroy()")
+        logD("Timestamp: ${System.currentTimeMillis()} | PID: ${android.os.Process.myPid()}")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     }
 
     /**
@@ -426,25 +438,27 @@ class AppUsageMonitorService : Service() {
         val lastResetDate = sharedPref.getString(LAST_RESET_DATE_KEY, "")
         val currentDate = getCurrentDate()
 
-        Log.d(TAG, "📅 Verificando cambio de día - Último reset: $lastResetDate, Fecha actual: $currentDate")
+        logD("📅 Verificando cambio de día | Último reset: '$lastResetDate' | Fecha actual: '$currentDate'")
 
         if (lastResetDate != currentDate) {
-            Log.d(TAG, "🔄 ¡Cambió el día! Reiniciando contadores...")
+            logD("🔄 ¡CAMBIÓ EL DÍA! Reiniciando contadores de uso diario...")
+            logD("De: $lastResetDate → A: $currentDate")
 
             childUuid?.let { uuid ->
                 dbUtils.resetDailyUsage(uuid,
                     onSuccess = {
                         // Guardar la nueva fecha de reinicio
                         sharedPref.edit().putString(LAST_RESET_DATE_KEY, currentDate).apply()
-                        Log.d(TAG, "✅ Contadores reiniciados para el nuevo día: $currentDate")
+                        logD("✅ Contadores reiniciados exitosamente para el nuevo día: $currentDate")
+                        logD("Fecha guardada en SharedPreferences")
                     },
                     onError = { error ->
-                        Log.e(TAG, "❌ Error reiniciando contadores: $error")
+                        logE("❌ Error reiniciando contadores: $error")
                     }
                 )
             }
         } else {
-            Log.d(TAG, "✅ Mismo día, no se requiere reinicio")
+            logD("✅ Mismo día ($currentDate) | No se requiere reinicio de contadores")
         }
     }
 
@@ -460,4 +474,3 @@ class AppUsageMonitorService : Service() {
         )
     }
 }
-

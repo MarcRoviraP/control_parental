@@ -62,10 +62,33 @@ class ChildActivity : AppCompatActivity() {
         setupRecyclerView()
         loadHeaderData()
 
-        // ⚠️ YA NO SUBIMOS DATOS AQUÍ - AppUsageMonitorService lo hace en background
-        // startPeriodicUsageUpload()
+        // IMPORTANTE: Iniciar BlockService para que comience a trackear y subir datos
+        startBlockService()
 
-        Log.d("ChildActivity", "✅ Activity iniciada - AppUsageMonitorService gestiona la subida de datos")
+        Log.d("ChildActivity", "✅ Activity iniciada - BlockService gestiona la subida de datos en tiempo real")
+    }
+
+    /**
+     * Inicia BlockService que es el responsable de trackear uso en tiempo real y subir a Firebase
+     */
+    private fun startBlockService() {
+        try {
+            Log.d("ChildActivity", "🚀 Iniciando BlockService (AppBlockerOverlayService)...")
+            val blockServiceIntent = Intent(this, es.mrp.controlparental.services.AppBlockerOverlayService::class.java)
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(blockServiceIntent)
+                Log.d("ChildActivity", "BlockService iniciado como Foreground Service")
+            } else {
+                startService(blockServiceIntent)
+                Log.d("ChildActivity", "BlockService iniciado como Service normal")
+            }
+
+            Log.d("ChildActivity", "✅ BlockService iniciado correctamente - Comenzará tracking en tiempo real")
+        } catch (e: Exception) {
+            Log.e("ChildActivity", "❌ Error iniciando BlockService", e)
+            Log.e("ChildActivity", "Detalles: ${e.message}")
+        }
     }
 
     /**
@@ -108,6 +131,61 @@ class ChildActivity : AppCompatActivity() {
      * Carga el tiempo global usado hoy
      */
     private fun loadGlobalTime() {
+        val currentUser = dbUtils.auth.currentUser
+        if (currentUser == null) {
+            Log.w("ChildActivity", "No hay usuario autenticado para cargar tiempo global")
+            binding.textGlobalTime.text = "0 min / Sin límite"
+            return
+        }
+
+        val childUuid = currentUser.uid
+
+        // Cargar datos desde Firebase (que BlockService mantiene actualizado)
+        dbUtils.getChildAppUsage(childUuid) { usageData ->
+            if (usageData != null) {
+                var totalUsage = 0L
+
+                val excludedFields = setOf(
+                    "childUID",
+                    "timestamp",
+                    "lastCaptureTime",
+                    "blockedApps",
+                    "timeLimits"
+                )
+
+                // Sumar el tiempo de todas las apps
+                for ((key, value) in usageData) {
+                    if (!excludedFields.contains(key) && value is Map<*, *>) {
+                        try {
+                            @Suppress("UNCHECKED_CAST")
+                            val appData = value as Map<String, Any>
+                            val timeInForeground = (appData["timeInForeground"] as? Number)?.toLong() ?: 0L
+                            totalUsage += timeInForeground
+                        } catch (e: Exception) {
+                            Log.e("ChildActivity", "Error procesando $key: ${e.message}")
+                        }
+                    }
+                }
+
+                val minutesUsed = TimeUnit.MILLISECONDS.toMinutes(totalUsage)
+
+                // Guardar para mostrar con el límite más tarde
+                binding.textGlobalTime.tag = minutesUsed
+                binding.textGlobalTime.text = "$minutesUsed min / Sin límite"
+
+                Log.d("ChildActivity", "⏰ Tiempo global desde Firebase: $minutesUsed minutos")
+            } else {
+                // Si no hay datos en Firebase, usar UsageStatsManager como respaldo
+                Log.d("ChildActivity", "⚠️ No hay datos en Firebase, usando UsageStatsManager local...")
+                loadGlobalTimeFromLocal()
+            }
+        }
+    }
+
+    /**
+     * Carga el tiempo global desde UsageStatsManager local (respaldo)
+     */
+    private fun loadGlobalTimeFromLocal() {
         val calendar = Calendar.getInstance()
         calendar.set(Calendar.HOUR_OF_DAY, 0)
         calendar.set(Calendar.MINUTE, 0)
@@ -134,7 +212,11 @@ class ChildActivity : AppCompatActivity() {
             binding.textGlobalTime.tag = minutesUsed
             binding.textGlobalTime.text = "$minutesUsed min / Sin límite"
 
-            Log.d("ChildActivity", "⏰ Tiempo global usado: $minutesUsed minutos")
+            Log.d("ChildActivity", "⏰ Tiempo global desde local: $minutesUsed minutos")
+        } else {
+            binding.textGlobalTime.tag = 0L
+            binding.textGlobalTime.text = "0 min / Sin límite"
+            Log.d("ChildActivity", "⚠️ No hay datos de uso disponibles")
         }
     }
 
@@ -407,4 +489,3 @@ class ChildActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
     }
 }
-

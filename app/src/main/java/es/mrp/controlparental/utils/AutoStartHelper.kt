@@ -14,6 +14,26 @@ object AutoStartHelper {
 
     private const val TAG = "AutoStartHelper"
 
+    // Función auxiliar para crear logs con referencia de línea
+    private fun logD(message: String) {
+        val lineNumber = Thread.currentThread().stackTrace[3].lineNumber
+        Log.d(TAG, "[Línea $lineNumber] $message")
+    }
+
+    private fun logW(message: String) {
+        val lineNumber = Thread.currentThread().stackTrace[3].lineNumber
+        Log.w(TAG, "[Línea $lineNumber] $message")
+    }
+
+    private fun logE(message: String, throwable: Throwable? = null) {
+        val lineNumber = Thread.currentThread().stackTrace[3].lineNumber
+        if (throwable != null) {
+            Log.e(TAG, "[Línea $lineNumber] $message", throwable)
+        } else {
+            Log.e(TAG, "[Línea $lineNumber] $message")
+        }
+    }
+
     private val POWER_MANAGER_INTENTS = arrayOf(
         // Xiaomi
         Intent().setClassName("com.miui.securitycenter",
@@ -59,7 +79,7 @@ object AutoStartHelper {
      */
     fun isProblematicManufacturer(): Boolean {
         val manufacturer = Build.MANUFACTURER.lowercase()
-        Log.d(TAG, "🔍 Detectando fabricante: '$manufacturer'")
+        logD("🔍 Detectando fabricante: '$manufacturer' | Build.MODEL: ${Build.MODEL} | Build.DEVICE: ${Build.DEVICE}")
 
         val problematicBrands = listOf(
             "xiaomi", "oppo", "vivo", "huawei", "honor",
@@ -69,12 +89,12 @@ object AutoStartHelper {
         val isProblematic = problematicBrands.any { brand ->
             val matches = manufacturer.contains(brand)
             if (matches) {
-                Log.d(TAG, "✅ Match encontrado: '$manufacturer' contiene '$brand'")
+                logD("✅ Match encontrado: '$manufacturer' contiene '$brand' | Requiere configuración especial")
             }
             matches
         }
 
-        Log.d(TAG, "Resultado: ${if (isProblematic) "ES PROBLEMÁTICO ⚠️" else "No problemático ✓"}")
+        logD("Resultado final: ${if (isProblematic) "ES PROBLEMÁTICO ⚠️" else "No problemático ✓"} | Fabricante: $manufacturer")
         return isProblematic
     }
 
@@ -91,35 +111,36 @@ object AutoStartHelper {
      * Intenta abrir la configuración de auto-inicio del fabricante
      */
     fun openAutoStartSettings(context: Context): Boolean {
-        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        Log.d(TAG, "🔓 Intentando abrir configuración de auto-inicio...")
-        Log.d(TAG, "Fabricante: ${Build.MANUFACTURER}")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logD("🔓 Intentando abrir configuración de auto-inicio | Context: ${context.javaClass.simpleName}")
+        logD("Fabricante: ${Build.MANUFACTURER} | Modelo: ${Build.MODEL} | SDK: ${Build.VERSION.SDK_INT}")
 
         for (intent in POWER_MANAGER_INTENTS) {
             try {
-                Log.d(TAG, "🔍 Probando: ${intent.component?.className}")
+                val className = intent.component?.className ?: "unknown"
+                logD("🔍 Probando intent: $className")
 
                 val resolveInfo = context.packageManager.resolveActivity(intent, 0)
                 if (resolveInfo != null) {
-                    Log.d(TAG, "✅ Configuración encontrada: ${intent.component}")
-                    Log.d(TAG, "📱 Abriendo configuración...")
+                    logD("✅ Configuración encontrada y disponible: ${intent.component}")
+                    logD("📱 Abriendo configuración... | ResolveInfo: ${resolveInfo.activityInfo.name}")
 
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
 
-                    Log.d(TAG, "✅ Configuración de auto-inicio abierta exitosamente")
-                    Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    logD("✅ Configuración de auto-inicio abierta exitosamente | Intent: $className")
+                    logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                     return true
                 } else {
-                    Log.d(TAG, "❌ No disponible: ${intent.component?.className}")
+                    logD("❌ No disponible en este dispositivo: $className")
                 }
             } catch (e: Exception) {
-                Log.d(TAG, "⚠️ Error con ${intent.component?.className}: ${e.message}")
+                logE("⚠️ Error con ${intent.component?.className}: ${e.message} | Tipo: ${e.javaClass.simpleName}", e)
             }
         }
 
-        Log.w(TAG, "❌ No se encontró configuración de auto-inicio específica del fabricante")
-        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logW("❌ No se encontró configuración de auto-inicio específica del fabricante | Total intents probados: ${POWER_MANAGER_INTENTS.size}")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         return false
     }
 
@@ -127,44 +148,45 @@ object AutoStartHelper {
      * Muestra un diálogo educativo sobre cómo habilitar auto-inicio
      */
     fun showAutoStartDialog(context: Context) {
-        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        Log.d(TAG, "📢 showAutoStartDialog() llamado")
-        Log.d(TAG, "Context: ${context.javaClass.simpleName}")
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logD("📢 showAutoStartDialog() llamado | Thread: ${Thread.currentThread().name}")
+        logD("Context: ${context.javaClass.simpleName} | Hash: ${context.hashCode()}")
 
         val manufacturer = getManufacturerName()
-        Log.d(TAG, "Fabricante: $manufacturer")
+        logD("Fabricante detectado: $manufacturer | Modelo: ${Build.MODEL}")
 
         val message = getInstructionsForManufacturer(manufacturer)
-        Log.d(TAG, "Mensaje preparado (${message.length} caracteres)")
+        logD("Mensaje preparado | Longitud: ${message.length} caracteres | Líneas: ${message.lines().size}")
 
         try {
-            Log.d(TAG, "🔨 Creando AlertDialog...")
+            logD("🔨 Creando AlertDialog... | Timestamp: ${System.currentTimeMillis()}")
 
             val dialog = AlertDialog.Builder(context)
                 .setTitle("⚠️ Configuración Importante")
                 .setMessage(message)
                 .setPositiveButton("Ir a Configuración") { dialog, _ ->
-                    Log.d(TAG, "👆 Usuario presionó 'Ir a Configuración'")
+                    logD("👆 Usuario presionó 'Ir a Configuración' | Timestamp: ${System.currentTimeMillis()}")
                     dialog.dismiss()
                     val opened = openAutoStartSettings(context)
                     if (!opened) {
+                        logW("⚠️ No se pudo abrir configuración automática, mostrando instrucciones manuales")
                         showManualInstructions(context, manufacturer)
                     }
                 }
                 .setNegativeButton("Más Tarde") { dialog, _ ->
-                    Log.d(TAG, "👆 Usuario presionó 'Más Tarde'")
+                    logD("👆 Usuario presionó 'Más Tarde' | Timestamp: ${System.currentTimeMillis()}")
                     dialog.dismiss()
                 }
                 .setCancelable(false)
                 .create()
 
-            Log.d(TAG, "📱 Mostrando diálogo...")
+            logD("📱 Mostrando diálogo... | Dialog hash: ${dialog.hashCode()}")
             dialog.show()
-            Log.d(TAG, "✅ Diálogo mostrado exitosamente")
-            Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            logD("✅ Diálogo mostrado exitosamente | Estado: ${if (dialog.isShowing) "VISIBLE" else "NO VISIBLE"}")
+            logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ ERROR mostrando diálogo", e)
-            Log.e(TAG, "Stack trace: ${e.stackTraceToString()}")
+            logE("❌ ERROR CRÍTICO mostrando diálogo | Tipo: ${e.javaClass.simpleName} | Mensaje: ${e.message}", e)
+            logE("Stack trace completo: ${e.stackTraceToString()}")
         }
     }
 
@@ -299,10 +321,11 @@ object AutoStartHelper {
         val shown = prefs.getBoolean("autostart_dialog_shown", false)
         val isProblematic = isProblematicManufacturer()
 
-        Log.d(TAG, "📋 shouldShowAutoStartDialog():")
-        Log.d(TAG, "  - Ya mostrado: $shown")
-        Log.d(TAG, "  - Es problemático: $isProblematic")
-        Log.d(TAG, "  - Resultado: ${!shown && isProblematic}")
+        logD("📋 shouldShowAutoStartDialog() evaluando:")
+        logD("  - Diálogo ya mostrado: $shown")
+        logD("  - Fabricante problemático: $isProblematic")
+        logD("  - Fabricante: ${Build.MANUFACTURER}")
+        logD("  - Resultado final: ${!shown && isProblematic} (${if (!shown && isProblematic) "SE MOSTRARÁ" else "NO SE MOSTRARÁ"})")
 
         return !shown && isProblematic
     }
@@ -311,9 +334,9 @@ object AutoStartHelper {
      * Marca el diálogo como mostrado
      */
     fun markAutoStartDialogShown(context: Context) {
-        Log.d(TAG, "✏️ Marcando diálogo como mostrado...")
+        logD("✏️ Marcando diálogo como mostrado...")
         val prefs = context.getSharedPreferences("preferences", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("autostart_dialog_shown", true).apply()
-        Log.d(TAG, "✅ Marcado correctamente")
+        logD("✅ Marcado correctamente")
     }
 }

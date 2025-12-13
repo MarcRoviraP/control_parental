@@ -12,6 +12,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import es.mrp.controlparental.R
 import es.mrp.controlparental.utils.DataBaseUtils
 import es.mrp.controlparental.models.TimeLimit
+
 class TimeLimitsActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var fabAddLimit: FloatingActionButton
@@ -99,11 +100,41 @@ class TimeLimitsActivity : AppCompatActivity() {
         val spinnerApp = dialogView.findViewById<Spinner>(R.id.spinnerApp)
         val editHours = dialogView.findViewById<EditText>(R.id.editHours)
         val editMinutes = dialogView.findViewById<EditText>(R.id.editMinutes)
+        val textTimeDisplay = dialogView.findViewById<TextView>(R.id.textTimeDisplay)
         val switchEnabled = dialogView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchEnabled)
         val btn30min = dialogView.findViewById<Button>(R.id.btn30min)
         val btn1hour = dialogView.findViewById<Button>(R.id.btn1hour)
         val btn2hours = dialogView.findViewById<Button>(R.id.btn2hours)
         val btn4hours = dialogView.findViewById<Button>(R.id.btn4hours)
+
+        // Establecer valores iniciales con formato
+        editHours.setText("00")
+        editMinutes.setText("00")
+        textTimeDisplay.text = "00:00"
+
+        // Función para actualizar el display de tiempo
+        val updateTimeDisplay = {
+            val hours = editHours.text.toString().toIntOrNull() ?: 0
+            val minutes = editMinutes.text.toString().toIntOrNull() ?: 0
+            textTimeDisplay.text = "${formatTwoDigits(hours)}:${formatTwoDigits(minutes)}"
+        }
+
+        // Listeners para actualizar el display en tiempo real
+        editHours.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                updateTimeDisplay()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
+        editMinutes.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                updateTimeDisplay()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
 
         // Preparar lista de apps para el spinner
         val appList = mutableListOf("🌐 Límite Global del Dispositivo")
@@ -113,22 +144,22 @@ class TimeLimitsActivity : AppCompatActivity() {
         appAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerApp.adapter = appAdapter
 
-        // Configurar botones de sugerencias rápidas
+        // Configurar botones de sugerencias rápidas con formato
         btn30min.setOnClickListener {
-            editHours.setText("0")
+            editHours.setText("00")
             editMinutes.setText("30")
         }
         btn1hour.setOnClickListener {
-            editHours.setText("1")
-            editMinutes.setText("0")
+            editHours.setText("01")
+            editMinutes.setText("00")
         }
         btn2hours.setOnClickListener {
-            editHours.setText("2")
-            editMinutes.setText("0")
+            editHours.setText("02")
+            editMinutes.setText("00")
         }
         btn4hours.setOnClickListener {
-            editHours.setText("4")
-            editMinutes.setText("0")
+            editHours.setText("04")
+            editMinutes.setText("00")
         }
 
         AlertDialog.Builder(this)
@@ -142,7 +173,7 @@ class TimeLimitsActivity : AppCompatActivity() {
                 val selectedPosition = spinnerApp.selectedItemPosition
 
                 if (totalMinutes <= 0) {
-                    Toast.makeText(this, "Por favor ingresa un tiempo válido", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "⚠️ Por favor ingresa un tiempo válido", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
 
@@ -170,7 +201,7 @@ class TimeLimitsActivity : AppCompatActivity() {
                         Toast.makeText(this, "✓ Límite guardado correctamente", Toast.LENGTH_SHORT).show()
                     },
                     onError = { error ->
-                        Toast.makeText(this, "Error: $error", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "❌ Error: $error", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -181,42 +212,83 @@ class TimeLimitsActivity : AppCompatActivity() {
     private fun showEditDialog(timeLimit: TimeLimit) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_time_limit, null)
         val spinnerApp = dialogView.findViewById<Spinner>(R.id.spinnerApp)
+        val cardAppNameDisplay = dialogView.findViewById<androidx.cardview.widget.CardView>(R.id.cardAppNameDisplay)
+        val textAppIcon = dialogView.findViewById<TextView>(R.id.textAppIcon)
+        val textAppNameDisplay = dialogView.findViewById<TextView>(R.id.textAppNameDisplay)
         val editHours = dialogView.findViewById<EditText>(R.id.editHours)
         val editMinutes = dialogView.findViewById<EditText>(R.id.editMinutes)
+        val textTimeDisplay = dialogView.findViewById<TextView>(R.id.textTimeDisplay)
         val switchEnabled = dialogView.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switchEnabled)
+        val btn30min = dialogView.findViewById<Button>(R.id.btn30min)
+        val btn1hour = dialogView.findViewById<Button>(R.id.btn1hour)
+        val btn2hours = dialogView.findViewById<Button>(R.id.btn2hours)
+        val btn4hours = dialogView.findViewById<Button>(R.id.btn4hours)
 
-        // Desactivar el spinner para no cambiar la app
-            val btn30min = dialogView.findViewById<Button>(R.id.btn30min)
-            val btn1hour = dialogView.findViewById<Button>(R.id.btn1hour)
-            val btn2hours = dialogView.findViewById<Button>(R.id.btn2hours)
-            val btn4hours = dialogView.findViewById<Button>(R.id.btn4hours)
-        // Establecer valores actuales
+        // Ocultar el spinner en modo edición y mostrar el nombre de la app
+        spinnerApp.visibility = android.view.View.GONE
+        cardAppNameDisplay.visibility = android.view.View.VISIBLE
+
+        // Configurar el icono y nombre de la app
+        if (timeLimit.packageName.isEmpty()) {
+            textAppIcon.text = "🌐"
+            textAppNameDisplay.text = timeLimit.appName
+        } else {
+            textAppIcon.text = "📱"
+            textAppNameDisplay.text = timeLimit.appName
+        }
+
+        // Establecer valores actuales con formato 00:00
         val hours = timeLimit.dailyLimitMinutes / 60
         val minutes = timeLimit.dailyLimitMinutes % 60
-        editHours.setText(hours.toString())
-        editMinutes.setText(minutes.toString())
+        editHours.setText(formatTwoDigits(hours))
+        editMinutes.setText(formatTwoDigits(minutes))
+        textTimeDisplay.text = "${formatTwoDigits(hours)}:${formatTwoDigits(minutes)}"
         switchEnabled.isChecked = timeLimit.enabled
 
-        // Configurar botones de sugerencias rápidas
+        // Función para actualizar el display de tiempo
+        val updateTimeDisplay = {
+            val h = editHours.text.toString().toIntOrNull() ?: 0
+            val m = editMinutes.text.toString().toIntOrNull() ?: 0
+            textTimeDisplay.text = "${formatTwoDigits(h)}:${formatTwoDigits(m)}"
+        }
+
+        // Listeners para actualizar el display en tiempo real
+        editHours.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                updateTimeDisplay()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
+        editMinutes.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                updateTimeDisplay()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
+        // Configurar botones de sugerencias rápidas con formato
         btn30min.setOnClickListener {
-            editHours.setText("0")
+            editHours.setText("00")
             editMinutes.setText("30")
         }
         btn1hour.setOnClickListener {
-            editHours.setText("1")
-            editMinutes.setText("0")
+            editHours.setText("01")
+            editMinutes.setText("00")
         }
         btn2hours.setOnClickListener {
-            editHours.setText("2")
-            editMinutes.setText("0")
+            editHours.setText("02")
+            editMinutes.setText("00")
         }
         btn4hours.setOnClickListener {
-            editHours.setText("4")
-            editMinutes.setText("0")
+            editHours.setText("04")
+            editMinutes.setText("00")
         }
 
         AlertDialog.Builder(this)
-            .setTitle("")
+            .setTitle("Editar Límite de Tiempo")
             .setView(dialogView)
             .setPositiveButton("Guardar") { dialog, which ->
                 val hours = editHours.text.toString().toIntOrNull() ?: 0
@@ -225,7 +297,7 @@ class TimeLimitsActivity : AppCompatActivity() {
                 val enabled = switchEnabled.isChecked
 
                 if (totalMinutes <= 0) {
-                    Toast.makeText(this, "Por favor ingresa un tiempo válido", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "⚠️ Por favor ingresa un tiempo válido", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
 
@@ -240,12 +312,12 @@ class TimeLimitsActivity : AppCompatActivity() {
                         Toast.makeText(this, "✓ Límite actualizado correctamente", Toast.LENGTH_SHORT).show()
                     },
                     onError = { error ->
-                        Toast.makeText(this, "Error: $error", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "❌ Error: $error", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
             .setNegativeButton("Cancelar", null)
-            .setNeutralButton("Eliminar") { dialog, which ->
+            .setNeutralButton("🗑️ Eliminar") { dialog, which ->
                 showDeleteConfirmation(timeLimit)
             }
             .show()
@@ -262,7 +334,8 @@ class TimeLimitsActivity : AppCompatActivity() {
                     packageName = timeLimit.packageName,
                     onSuccess = {
                         Toast.makeText(this, "✓ Límite eliminado", Toast.LENGTH_SHORT).show()
-                    },                    onError = { error ->
+                    },
+                    onError = { error ->
                         Toast.makeText(this, "Error: $error", Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -333,4 +406,9 @@ class TimeLimitsAdapter(
     }
 
     override fun getItemCount() = timeLimits.size
+}
+
+// Función para formatear números a dos dígitos
+fun formatTwoDigits(number: Int): String {
+    return String.format("%02d", number)
 }

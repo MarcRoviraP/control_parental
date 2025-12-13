@@ -598,19 +598,31 @@ class DataBaseUtils(context: Context) {
                 timeLimitsMap[key] = limitData
             }
             
-            val data = hashMapOf<String, Any>(
-                "timeLimits" to timeLimitsMap
-            )
-            
+            // Primero obtener el documento actual para no perder otros campos
             db.collection(collectionAppUsage)
                 .document(childUuid)
-                .set(data, com.google.firebase.firestore.SetOptions.merge())
-                .addOnSuccessListener {
-                    Log.d(TAG_TIME_LIMITS, "✅ Campo timeLimits actualizado en appUsage: ${timeLimitsMap.size} límites")
-                    onSuccess()
+                .get()
+                .addOnSuccessListener { snapshot ->
+                    val currentData = snapshot.data?.toMutableMap() ?: mutableMapOf()
+
+                    // Reemplazar completamente el campo timeLimits (esto elimina los límites borrados)
+                    currentData["timeLimits"] = timeLimitsMap
+
+                    // Actualizar el documento completo
+                    db.collection(collectionAppUsage)
+                        .document(childUuid)
+                        .set(currentData)
+                        .addOnSuccessListener {
+                            Log.d(TAG_TIME_LIMITS, "✅ Campo timeLimits REEMPLAZADO en appUsage: ${timeLimitsMap.size} límites")
+                            onSuccess()
+                        }
+                        .addOnFailureListener { e ->
+                            Log.w(TAG_TIME_LIMITS, "❌ Error actualizando timeLimits en appUsage", e)
+                            onError(e.message ?: "Error desconocido")
+                        }
                 }
                 .addOnFailureListener { e ->
-                    Log.w(TAG_TIME_LIMITS, "❌ Error actualizando timeLimits en appUsage", e)
+                    Log.w(TAG_TIME_LIMITS, "❌ Error obteniendo documento actual", e)
                     onError(e.message ?: "Error desconocido")
                 }
         }
@@ -625,52 +637,93 @@ class DataBaseUtils(context: Context) {
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.w(TAG_TIME_LIMITS, "❌ Error escuchando límites desde appUsage", error)
+                    // En caso de error, intentar recuperar datos con get() como respaldo
+                    Log.d(TAG_TIME_LIMITS, "🔄 Intentando recuperar límites con get() como respaldo...")
+                    db.collection(collectionAppUsage)
+                        .document(childUuid)
+                        .get()
+                        .addOnSuccessListener { doc ->
+                            if (doc != null && doc.exists()) {
+                                val limits = parseTimeLimitsFromDocument(doc.data)
+                                Log.d(TAG_TIME_LIMITS, "✅ Límites recuperados con get(): ${limits.size}")
+                                onUpdate(limits)
+                            }
+                        }
                     return@addSnapshotListener
                 }
 
                 if (snapshot != null && snapshot.exists()) {
-                    val limits = mutableListOf<TimeLimit>()
-
-                    @Suppress("UNCHECKED_CAST")
-                    val timeLimitsField = snapshot.data?.get("timeLimits") as? Map<String, Any>
-
-                    if (timeLimitsField != null) {
-                        Log.d(TAG_TIME_LIMITS, "✅ Campo timeLimits encontrado: ${timeLimitsField.size} límites")
-
-                        for ((packageName, limitData) in timeLimitsField) {
-                            try {
-                                @Suppress("UNCHECKED_CAST")
-                                val limitMap = limitData as? Map<String, Any>
-
-                                if (limitMap != null) {
-                                    val appName = limitMap["appName"] as? String ?: ""
-                                    val dailyLimitMinutes = (limitMap["dailyLimitMinutes"] as? Number)?.toInt() ?: 0
-                                    val enabled = limitMap["enabled"] as? Boolean ?: true
-
-                                    // Convertir "GLOBAL_LIMIT" de vuelta a cadena vacía
-                                    val normalizedPackage = if (packageName == "GLOBAL_LIMIT") "" else packageName
-
-                                    limits.add(TimeLimit(
-                                        packageName = normalizedPackage,
-                                        appName = appName,
-                                        dailyLimitMinutes = dailyLimitMinutes,
-                                        enabled = enabled
-                                    ))
-                                    Log.d(TAG_TIME_LIMITS, "  📊 $appName ($packageName) = $dailyLimitMinutes min")
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG_TIME_LIMITS, "❌ Error parseando límite para $packageName", e)
-                            }
-                        }
-                    } else {
-                        Log.d(TAG_TIME_LIMITS, "⚠️ Campo 'timeLimits' no encontrado en appUsage")
-                    }
-
+                    val limits = parseTimeLimitsFromDocument(snapshot.data)
+                    Log.d(TAG_TIME_LIMITS, "🔔 Listener disparado: ${limits.size} límites actualizados")
                     onUpdate(limits)
                 } else {
                     Log.d(TAG_TIME_LIMITS, "⚠️ No hay documento appUsage para hijo $childUuid")
                     onUpdate(emptyList())
                 }
+            }
+    }
+
+    private fun parseTimeLimitsFromDocument(data: Map<String, Any>?): List<TimeLimit> {
+        val limits = mutableListOf<TimeLimit>()
+
+        @Suppress("UNCHECKED_CAST")
+        val timeLimitsField = data?.get("timeLimits") as? Map<String, Any>
+
+        if (timeLimitsField != null) {
+            Log.d(TAG_TIME_LIMITS, "✅ Campo timeLimits encontrado: ${timeLimitsField.size} límites")
+
+            for ((packageName, limitData) in timeLimitsField) {
+                try {
+                    @Suppress("UNCHECKED_CAST")
+                    val limitMap = limitData as? Map<String, Any>
+
+                    if (limitMap != null) {
+                        val appName = limitMap["appName"] as? String ?: ""
+                        val dailyLimitMinutes = (limitMap["dailyLimitMinutes"] as? Number)?.toInt() ?: 0
+                        val enabled = limitMap["enabled"] as? Boolean ?: true
+
+                        // Convertir "GLOBAL_LIMIT" de vuelta a cadena vacía
+                        val normalizedPackage = if (packageName == "GLOBAL_LIMIT") "" else packageName
+
+                        limits.add(TimeLimit(
+                            packageName = normalizedPackage,
+                            appName = appName,
+                            dailyLimitMinutes = dailyLimitMinutes,
+                            enabled = enabled
+                        ))
+                        Log.d(TAG_TIME_LIMITS, "  📊 $appName ($packageName) = $dailyLimitMinutes min")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG_TIME_LIMITS, "❌ Error parseando límite para $packageName", e)
+                }
+            }
+        } else {
+            Log.d(TAG_TIME_LIMITS, "⚠️ Campo 'timeLimits' no encontrado en documento")
+        }
+
+        return limits
+    }
+
+    fun getTimeLimitsFromUsage(
+        childUuid: String,
+        callback: (List<TimeLimit>) -> Unit
+    ) {
+        db.collection(collectionAppUsage)
+            .document(childUuid)
+            .get()
+            .addOnSuccessListener { document ->
+                if (document.exists()) {
+                    val limits = parseTimeLimitsFromDocument(document.data)
+                    Log.d(TAG_TIME_LIMITS, "📊 Límites obtenidos con get(): ${limits.size}")
+                    callback(limits)
+                } else {
+                    Log.w(TAG_TIME_LIMITS, "⚠️ No hay documento appUsage")
+                    callback(emptyList())
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.w(TAG_TIME_LIMITS, "❌ Error obteniendo límites", e)
+                callback(emptyList())
             }
     }
 
