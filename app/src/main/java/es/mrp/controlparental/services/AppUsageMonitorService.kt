@@ -362,7 +362,7 @@ class AppUsageMonitorService : Service() {
         // Calcular el inicio del día (00:00:00)
         val calendar = java.util.Calendar.getInstance()
         calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
-        calendar.set(java.util.Calendar.MINUTE, 0)
+        calendar.set(java.util.Calendar.MINUTE, 20)
         calendar.set(java.util.Calendar.SECOND, 0)
         calendar.set(java.util.Calendar.MILLISECOND, 0)
         val startTime = calendar.timeInMillis

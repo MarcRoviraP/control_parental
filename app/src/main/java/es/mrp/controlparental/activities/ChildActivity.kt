@@ -15,10 +15,11 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import es.mrp.controlparental.databinding.ActivityChildBinding
 import es.mrp.controlparental.utils.DataBaseUtils
+import es.mrp.controlparental.utils.AppTrackingUtils
 import es.mrp.controlparental.adapters.AppListAdapter
 import es.mrp.controlparental.dialogs.QRDialog
 import es.mrp.controlparental.models.TimeLimit
-import es.mrp.controlparental.utils.getInstalledApps
+import es.mrp.controlparental.models.AppPackageClass
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -66,6 +67,51 @@ class ChildActivity : AppCompatActivity() {
         startBlockService()
 
         Log.d("ChildActivity", "✅ Activity iniciada - BlockService gestiona la subida de datos en tiempo real")
+        conseguirAppsDiaria()
+    }
+
+
+    /*
+    Borrar
+    */
+
+    private fun conseguirAppsDiaria() {
+
+
+            val calendar = java.util.Calendar.getInstance()
+            calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            calendar.set(java.util.Calendar.MINUTE, 20)
+            calendar.set(java.util.Calendar.SECOND, 0)
+            calendar.set(java.util.Calendar.MILLISECOND, 0)
+            val startTime = calendar.timeInMillis
+            val endTime = System.currentTimeMillis()
+
+            val usageStats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                startTime,
+                endTime
+            )
+
+        val tiemposPorApp = mutableMapOf<String, Long>()
+
+        for (usageStat in usageStats) {
+            val tiempo = usageStat.totalTimeInForeground
+            if (tiempo <= 0) continue
+
+            tiemposPorApp[usageStat.packageName] =
+                tiemposPorApp.getOrDefault(usageStat.packageName, 0L) + tiempo
+        }
+
+        for ((packageName, tiempoMs) in tiemposPorApp) {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val nombreApp = packageManager.getApplicationLabel(appInfo).toString()
+            val minutos = tiempoMs / 60000L
+
+            Log.d("conseguirAppsDiaria", "Nombre: $nombreApp, Time: $minutos")
+        }
+
+
+
     }
 
     /**
@@ -250,16 +296,63 @@ class ChildActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        // Obtener lista de apps instaladas
-        val pm = packageManager
-        val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        // Obtener estadísticas de uso desde las 00:00 del día actual
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 20)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startTime = calendar.timeInMillis
+        val endTime = System.currentTimeMillis()
 
-        // Filtrar para excluir la propia app de control parental
-        val filteredPackages = packages.filter { appInfo ->
-            appInfo.packageName != applicationContext.packageName
+        val usageStats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            startTime,
+            endTime
+        )
+
+        // Agrupar tiempos por packageName (igual que en conseguirAppsDiaria)
+        val tiemposPorApp = mutableMapOf<String, Long>()
+
+        if (usageStats != null) {
+            for (usageStat in usageStats) {
+                val tiempo = usageStat.totalTimeInForeground
+                if (tiempo <= 0) continue
+
+                // Excluir apps del sistema y la propia app de control parental
+                if (AppTrackingUtils.shouldExcludeFromTimeTracking(applicationContext, usageStat.packageName)) continue
+
+                tiemposPorApp[usageStat.packageName] =
+                    tiemposPorApp.getOrDefault(usageStat.packageName, 0L) + tiempo
+            }
         }
 
-        val appList = getInstalledApps(this, filteredPackages, pm)
+        // Convertir el mapa a lista de AppPackageClass
+        val appList = mutableListOf<AppPackageClass>()
+        val pm = packageManager
+
+        for ((packageName, tiempoMs) in tiemposPorApp) {
+            try {
+                val appInfo = pm.getApplicationInfo(packageName, 0)
+                val nombreApp = pm.getApplicationLabel(appInfo).toString()
+
+                appList.add(
+                    AppPackageClass(
+                        packageName = packageName,
+                        appName = nombreApp,
+                        time = tiempoMs,
+                        blocked = blockedAppsList.contains(packageName)
+                    )
+                )
+
+                Log.d("setupRecyclerView", "App: $nombreApp, Tiempo: ${tiempoMs / 60000L} min")
+            } catch (e: PackageManager.NameNotFoundException) {
+                Log.w("setupRecyclerView", "App no encontrada: $packageName")
+            }
+        }
+
+        // Ordenar por tiempo de uso (mayor a menor)
+        appList.sortByDescending { it.time }
 
         // Configurar RecyclerView y guardar referencia al adaptador
         appListAdapter = AppListAdapter(appList, blockedAppsList) { app, isBlocked ->

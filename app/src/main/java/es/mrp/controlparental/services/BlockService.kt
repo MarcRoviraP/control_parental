@@ -8,7 +8,6 @@ import android.app.Service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
@@ -26,7 +25,10 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import es.mrp.controlparental.R
 import es.mrp.controlparental.utils.DataBaseUtils
+import es.mrp.controlparental.utils.AppTrackingUtils
 import es.mrp.controlparental.models.TimeLimit
+import androidx.core.content.edit
+import kotlin.math.abs
 
 class AppBlockerOverlayService : Service() {
 
@@ -53,22 +55,11 @@ class AppBlockerOverlayService : Service() {
     private var foregroundAppStartTime: Long = 0L
     private val updateUsageInterval = 60000L
 
-    // Lista de paquetes del sistema a excluir del conteo
-    private val systemPackagesToExclude = setOf(
-        "com.android.launcher",
-        "com.android.launcher2",
-        "com.android.launcher3",
-        "com.google.android.apps.nexuslauncher",
-        "com.sec.android.app.launcher", // Samsung
-        "com.huawei.android.launcher", // Huawei
-        "com.oppo.launcher", // OPPO ✅
-        "com.bbk.launcher2", // Vivo
-        "com.mi.android.globallauncher", // Xiaomi
-        "com.miui.home", // Xiaomi MIUI
-        "com.oneplus.launcher", // OnePlus
-        "com.android.systemui",
-        "com.android.settings"
-    )
+    // Snapshot para detectar cambios y evitar escrituras innecesarias
+    private val lastSyncedUsage = mutableMapOf<String, Long>()
+    private var lastSyncedGlobalUsage: Long = 0L
+    private var isInitialSnapshotLoaded = false
+
 
     companion object {
         private const val TAG = "AppBlockerService"
@@ -92,11 +83,13 @@ class AppBlockerOverlayService : Service() {
         if (childUuid != null) {
             Log.d(TAG, "✅ UUID encontrado: $childUuid - Iniciando monitoreo completo")
 
-            // Verificar si cambió el día y limpiar contadores locales
+            // Verificar si cambió el día y reiniciar contadores
             checkAndResetLocalCountersIfNeeded()
 
             startListeningToBlockedApps()
             startListeningToTimeLimits()
+
+            // Cargar snapshot inicial (Firebase primero, UsageStatsManager como fallback)
             loadTodayUsage()
         } else {
             Log.w(TAG, "⚠️ No se encontró UUID del hijo")
@@ -121,16 +114,20 @@ class AppBlockerOverlayService : Service() {
         Log.d(TAG, "📅 Verificando cambio de día - Último reset: $lastResetDate, Fecha actual: $currentDate")
 
         if (lastResetDate != currentDate) {
-            Log.d(TAG, "🔄 ¡Cambió el día! Limpiando contadores locales...")
+            Log.d(TAG, "🔄 ¡Cambió el día! Reiniciando contadores...")
 
+            // Limpiar todo el estado local
             dailyUsage.clear()
             globalDailyUsage = 0L
+            lastSyncedUsage.clear()
+            lastSyncedGlobalUsage = 0L
+            isInitialSnapshotLoaded = false
 
-            sharedPref.edit().putString(LAST_RESET_DATE_KEY, currentDate).apply()
+            sharedPref.edit { putString(LAST_RESET_DATE_KEY, currentDate) }
 
-            Log.d(TAG, "✅ Contadores locales reiniciados para el nuevo día: $currentDate")
+            Log.d(TAG, "✅ Contadores reiniciados para el nuevo día: $currentDate")
         } else {
-            Log.d(TAG, "✅ Mismo día, no se requiere reinicio de contadores locales")
+            Log.d(TAG, "✅ Mismo día, continuando con contadores actuales")
         }
     }
 
@@ -144,24 +141,13 @@ class AppBlockerOverlayService : Service() {
         )
     }
 
-    private fun shouldExcludeFromTimeTracking(packageName: String): Boolean {
-        if (packageName == applicationContext.packageName) {
-            return true
-        }
-
-        if (systemPackagesToExclude.contains(packageName)) {
-            return true
-        }
-
-        return false
-    }
 
     private fun startListeningToBlockedApps() {
         childUuid?.let { uuid ->
             dbUtils.listenToBlockedAppsFromUsage(uuid) { blockedPackages ->
                 blockedApps.clear()
                 blockedApps.addAll(blockedPackages)
-                Log.d(TAG, "📝 Apps bloqueadas desde appUsage: ${blockedApps.size}")
+                Log.d(TAG, "📝 Apps bloqueadas actualizadas: ${blockedApps.size}")
                 handler.post { checkForegroundAppWithFallback() }
             }
         }
@@ -176,40 +162,31 @@ class AppBlockerOverlayService : Service() {
                 Log.d(TAG, "📊 Total de límites recibidos: ${limits.size}")
 
                 for (limit in limits) {
-                    Log.d(TAG, "📊 Procesando límite: packageName='${limit.packageName}', appName='${limit.appName}', minutes=${limit.dailyLimitMinutes}, enabled=${limit.enabled}")
-
                     if (limit.packageName.isEmpty() || limit.packageName == "GLOBAL_LIMIT") {
                         globalTimeLimit = limit
-                        Log.d(TAG, "⏰ Límite global desde appUsage: ${limit.dailyLimitMinutes} min (enabled=${limit.enabled})")
+                        Log.d(TAG, "⏰ Límite global: ${limit.dailyLimitMinutes} min (enabled=${limit.enabled})")
                     } else {
                         timeLimits[limit.packageName] = limit
-                        Log.d(TAG, "⏰ Límite ${limit.appName} desde appUsage: ${limit.dailyLimitMinutes} min")
+                        Log.d(TAG, "⏰ Límite ${limit.appName}: ${limit.dailyLimitMinutes} min")
                     }
-                }
-
-                if (globalTimeLimit == null) {
-                    Log.w(TAG, "⚠️ No se encontró límite global después de procesar ${limits.size} límites")
-                } else {
-                    Log.d(TAG, "✅ Límite global configurado: ${globalTimeLimit?.dailyLimitMinutes} min")
                 }
             }
         }
     }
 
+    /**
+     * PASO 1: Intentar cargar desde Firebase
+     * Si no hay datos o es la primera vez, cargar desde UsageStatsManager
+     */
     private fun loadTodayUsage() {
         childUuid?.let { uuid ->
             dbUtils.getChildAppUsage(uuid) { usageData ->
-                if (usageData != null) {
+                if (usageData != null && !isInitialSnapshotLoaded) {
+                    // Cargar desde Firebase
                     dailyUsage.clear()
                     var totalUsage = 0L
 
-                    val excludedFields = setOf(
-                        "childUID",
-                        "timestamp",
-                        "lastCaptureTime",
-                        "blockedApps",
-                        "timeLimits"
-                    )
+                    val excludedFields = setOf("childUID", "timestamp", "lastCaptureTime", "blockedApps", "timeLimits")
 
                     for ((key, value) in usageData) {
                         if (!excludedFields.contains(key) && value is Map<*, *>) {
@@ -220,15 +197,14 @@ class AppBlockerOverlayService : Service() {
                                 val packageName = appData["packageName"] as? String ?: ""
                                 val timeInForeground = (appData["timeInForeground"] as? Number)?.toLong() ?: 0L
 
-                                if (shouldExcludeFromTimeTracking(packageName)) {
-                                    Log.d(TAG, "⏭️ Excluyendo del conteo: $packageName")
+                                if (AppTrackingUtils.shouldExcludeFromTimeTracking(applicationContext, packageName)) {
                                     continue
                                 }
 
                                 if (packageName.isNotEmpty() && timeInForeground > 0) {
                                     dailyUsage[packageName] = timeInForeground
                                     totalUsage += timeInForeground
-                                    Log.d(TAG, "📊 Uso cargado desde Firebase: $packageName = ${timeInForeground / 60000} min")
+                                    Log.d(TAG, "📊 Firebase: $packageName = ${timeInForeground / 60000} min")
                                 }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Error procesando campo $key: ${e.message}")
@@ -237,35 +213,38 @@ class AppBlockerOverlayService : Service() {
                     }
 
                     globalDailyUsage = totalUsage
-                    Log.d(TAG, "📊 Uso total cargado desde Firebase: ${globalDailyUsage / 60000} min")
-                } else {
-                    Log.d(TAG, "⚠️ No hay datos de uso en Firebase - Cargando desde UsageStatsManager local...")
-                    // Si no hay datos en Firebase, obtenerlos localmente
-                    loadUsageFromLocal()
+                    lastSyncedUsage.clear()
+                    lastSyncedUsage.putAll(dailyUsage)
+                    lastSyncedGlobalUsage = globalDailyUsage
+                    isInitialSnapshotLoaded = true
+
+                    Log.d(TAG, "✅ Snapshot inicial desde Firebase: ${dailyUsage.size} apps | ${globalDailyUsage / 60000} min")
+                } else if (!isInitialSnapshotLoaded) {
+                    Log.d(TAG, "⚠️ No hay datos en Firebase - Cargando snapshot desde UsageStatsManager...")
+                    loadInitialSnapshotFromLocal()
                 }
             }
         }
     }
 
     /**
-     * Carga los datos de uso desde UsageStatsManager local (cuando Firebase está vacío)
-     * Esto permite empezar a contar desde el uso que ya tiene el dispositivo hoy
+     * PASO 2: Cargar snapshot inicial desde UsageStatsManager
+     * Solo se ejecuta UNA VEZ al arrancar el servicio
      */
-    private fun loadUsageFromLocal() {
+    private fun loadInitialSnapshotFromLocal() {
         try {
-            Log.d(TAG, "📱 Obteniendo datos de uso desde UsageStatsManager local...")
+            Log.d(TAG, "📸 Capturando snapshot inicial desde UsageStatsManager...")
 
-            // Obtener estadísticas desde las 00:00 del día actual
             val calendar = java.util.Calendar.getInstance()
             calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
-            calendar.set(java.util.Calendar.MINUTE, 0)
+            calendar.set(java.util.Calendar.MINUTE, 20)
             calendar.set(java.util.Calendar.SECOND, 0)
             calendar.set(java.util.Calendar.MILLISECOND, 0)
             val startTime = calendar.timeInMillis
             val endTime = System.currentTimeMillis()
 
             val usageStats = usageStatsManager.queryUsageStats(
-                android.app.usage.UsageStatsManager.INTERVAL_DAILY,
+                UsageStatsManager.INTERVAL_DAILY,
                 startTime,
                 endTime
             )
@@ -273,47 +252,40 @@ class AppBlockerOverlayService : Service() {
             if (usageStats != null && usageStats.isNotEmpty()) {
                 dailyUsage.clear()
                 var totalUsage = 0L
-                var appsLoaded = 0
 
-                // Agrupar por packageName y obtener el de mayor uso
                 val uniqueStats = usageStats
-                    .filter { it.totalTimeInForeground > 0 }
+                    .filter { (it.totalTimeInForeground / 1000) > 0 }
                     .groupBy { it.packageName }
                     .mapNotNull { (_, list) -> list.maxByOrNull { it.totalTimeInForeground } }
-                    .sortedByDescending { it.totalTimeInForeground }
 
                 for (stat in uniqueStats) {
-                    val packageName = stat.packageName
-                    val timeInForeground = stat.totalTimeInForeground
-
-                    // Excluir apps del sistema y la propia app
-                    if (shouldExcludeFromTimeTracking(packageName)) {
+                    if (AppTrackingUtils.shouldExcludeFromTimeTracking(applicationContext, stat.packageName)) {
                         continue
                     }
 
-                    // Agregar a dailyUsage
-                    dailyUsage[packageName] = timeInForeground
-                    totalUsage += timeInForeground
-                    appsLoaded++
 
-                    Log.d(TAG, "📊 Uso local cargado: $packageName = ${timeInForeground / 60000} min")
+                    dailyUsage[stat.packageName] = stat.totalTimeInForeground
+                    totalUsage += stat.totalTimeInForeground
+                    Log.d(TAG, "📊 UsageStats: ${stat.packageName} = ${stat.totalTimeInForeground / 60000} min")
                 }
 
                 globalDailyUsage = totalUsage
-                Log.d(TAG, "✅ Cargadas $appsLoaded apps desde local | Uso total: ${globalDailyUsage / 60000} min")
+                lastSyncedUsage.clear()
+                lastSyncedUsage.putAll(dailyUsage)
+                lastSyncedGlobalUsage = globalDailyUsage
 
-                // Subir inmediatamente a Firebase para tener datos iniciales
-                Log.d(TAG, "📤 Subiendo datos iniciales a Firebase...")
-                uploadCurrentUsageToFirebase()
+                Log.d(TAG, "✅ Snapshot inicial capturado: ${dailyUsage.size} apps | ${globalDailyUsage / 60000} min")
+
+                // Subir snapshot inicial a Firebase
+                uploadUsageToFirebaseIfChanged()
             } else {
-                Log.d(TAG, "⚠️ No hay datos de uso locales disponibles - Empezando desde cero")
-                dailyUsage.clear()
-                globalDailyUsage = 0L
+                Log.d(TAG, "⚠️ No hay datos de uso disponibles")
             }
+
+            isInitialSnapshotLoaded = true
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error cargando datos de uso locales: ${e.message}", e)
-            dailyUsage.clear()
-            globalDailyUsage = 0L
+            Log.e(TAG, "❌ Error capturando snapshot: ${e.message}", e)
+            isInitialSnapshotLoaded = true
         }
     }
 
@@ -336,52 +308,120 @@ class AppBlockerOverlayService : Service() {
         }
     }
 
+    /**
+     * PASO 3: Actualizar uso cada 60 segundos
+     * Consulta UsageStatsManager local y sube a Firebase
+     */
     private fun updateCurrentAppUsage() {
-        val currentApp = currentForegroundApp
-        if (currentApp != null && foregroundAppStartTime > 0) {
-            if (shouldExcludeFromTimeTracking(currentApp)) {
-                Log.d(TAG, "⏭️ App excluida en uso - NO se contabiliza tiempo: $currentApp")
-                foregroundAppStartTime = System.currentTimeMillis()
-                return
-            }
+        try {
+            Log.d(TAG, "🔄 Actualizando uso desde UsageStatsManager local...")
 
-            val currentTime = System.currentTimeMillis()
-            val sessionTime = currentTime - foregroundAppStartTime
+            val calendar = java.util.Calendar.getInstance()
+            calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            calendar.set(java.util.Calendar.MINUTE, 20)
+            calendar.set(java.util.Calendar.SECOND, 0)
+            calendar.set(java.util.Calendar.MILLISECOND, 0)
+            val startTime = calendar.timeInMillis
+            val endTime = System.currentTimeMillis()
 
-            val previousUsage = dailyUsage[currentApp] ?: 0L
-            val newUsage = previousUsage + sessionTime
-            dailyUsage[currentApp] = newUsage
+            val usageStats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                startTime,
+                endTime
+            )
 
-            globalDailyUsage += sessionTime
-            foregroundAppStartTime = currentTime
+            if (usageStats != null && usageStats.isNotEmpty()) {
+                // Limpiar y recalcular desde cero
+                dailyUsage.clear()
+                var totalUsage = 0L
 
-            uploadCurrentUsageToFirebase()
+                val uniqueStats = usageStats
+                    .filter { it.totalTimeInForeground > 0 }
+                    .groupBy { it.packageName }
+                    .mapNotNull { (_, list) -> list.maxByOrNull { it.totalTimeInForeground } }
 
-            val appUsageMinutes = newUsage / 60000
-            timeLimits[currentApp]?.let { limit ->
-                if (limit.enabled) {
-                    val appLimitMinutes = limit.dailyLimitMinutes
-                    val appRemainingMinutes = appLimitMinutes - appUsageMinutes
-                    Log.d(TAG, "📊 ${limit.appName}: ${appUsageMinutes}min / ${appLimitMinutes}min (Quedan: ${appRemainingMinutes}min)")
+                for (stat in uniqueStats) {
+                    if (AppTrackingUtils.shouldExcludeFromTimeTracking(applicationContext, stat.packageName)) {
+                        continue
+                    }
+
+
+
+                    dailyUsage[stat.packageName] = stat.totalTimeInForeground
+                    totalUsage += stat.totalTimeInForeground
                 }
-            }
 
-            val globalUsageMinutes = globalDailyUsage / 60000
-            globalTimeLimit?.let { limit ->
-                if (limit.enabled) {
-                    val globalLimitMinutes = limit.dailyLimitMinutes
-                    val globalRemainingMinutes = globalLimitMinutes - globalUsageMinutes
-                    Log.d(TAG, "🌐 Tiempo Global: ${globalUsageMinutes}min / ${globalLimitMinutes}min (Quedan: ${globalRemainingMinutes}min)")
+                globalDailyUsage = totalUsage
+
+                Log.d(TAG, "📊 Uso actualizado: ${dailyUsage.size} apps | ${globalDailyUsage / 60000} min")
+
+                // Verificar límites
+                currentForegroundApp?.let { app ->
+                    val appUsageMinutes = (dailyUsage[app] ?: 0L) / 60000
+                    timeLimits[app]?.let { limit ->
+                        if (limit.enabled) {
+                            Log.d(TAG, "📊 ${limit.appName}: ${appUsageMinutes}/${limit.dailyLimitMinutes}min")
+                        }
+                    }
+
+                    if (isTimeLimitExceeded(app)) {
+                        blockApp(app)
+                    }
                 }
-            } ?: run {
-                Log.d(TAG, "📊 Uso Global: ${globalUsageMinutes}min (Sin límite)")
-            }
 
-            if (isTimeLimitExceeded(currentApp)) {
-                Log.w(TAG, "⚠️ Límite excedido detectado")
-                blockApp(currentApp)
+                val globalUsageMinutes = globalDailyUsage / 60000
+                globalTimeLimit?.let { limit ->
+                    if (limit.enabled) {
+                        Log.d(TAG, "🌐 Tiempo Global: ${globalUsageMinutes}/${limit.dailyLimitMinutes}min")
+                    }
+                }
+
+                // Subir a Firebase solo si hay cambios significativos
+                uploadUsageToFirebaseIfChanged()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error actualizando uso: ${e.message}", e)
+        }
+    }
+
+    /**
+     * PASO 4: Detectar cambios y subir a Firebase solo cuando sea necesario
+     */
+    private fun uploadUsageToFirebaseIfChanged() {
+        var hasSignificantChanges = false
+        val changeThresholdMillis = 60000L // 1 minuto
+
+        // Verificar cambio global
+        val globalDifference = abs(globalDailyUsage - lastSyncedGlobalUsage)
+        if (globalDifference >= changeThresholdMillis) {
+            hasSignificantChanges = true
+            Log.d(TAG, "🔄 Cambio global: ${globalDifference / 60000} min")
+        }
+
+        // Verificar cambios por app
+        for ((packageName, currentUsage) in dailyUsage) {
+            val lastUsage = lastSyncedUsage[packageName] ?: 0L
+            val difference = abs(currentUsage - lastUsage)
+
+            if (difference >= changeThresholdMillis) {
+                hasSignificantChanges = true
             }
         }
+
+        // Detectar apps nuevas
+        val newApps = dailyUsage.keys - lastSyncedUsage.keys
+        if (newApps.isNotEmpty()) {
+            hasSignificantChanges = true
+            Log.d(TAG, "🔄 Nuevas apps: ${newApps.size}")
+        }
+
+        Log.d(TAG, "📤 Subiendo cambios a Firebase...")
+        uploadCurrentUsageToFirebase()
+
+        // Actualizar snapshot
+        lastSyncedUsage.clear()
+        lastSyncedUsage.putAll(dailyUsage)
+        lastSyncedGlobalUsage = globalDailyUsage
     }
 
     private fun uploadCurrentUsageToFirebase() {
@@ -394,13 +434,7 @@ class AppBlockerOverlayService : Service() {
                     val existingPackageKeys = mutableMapOf<String, String>()
 
                     if (existingData != null) {
-                        val excludedFields = setOf(
-                            "childUID",
-                            "timestamp",
-                            "lastCaptureTime",
-                            "blockedApps",
-                            "timeLimits"
-                        )
+                        val excludedFields = setOf("childUID", "timestamp", "lastCaptureTime", "blockedApps", "timeLimits")
 
                         for ((key, value) in existingData) {
                             if (!excludedFields.contains(key) && value is Map<*, *>) {
@@ -413,8 +447,6 @@ class AppBlockerOverlayService : Service() {
                             }
                         }
                     }
-
-                    Log.d(TAG, "📋 Paquetes existentes en Firebase: ${existingPackageKeys.keys}")
 
                     var newIndex = 0
                     dailyUsage.forEach { (packageName, timeInForeground) ->
@@ -436,19 +468,19 @@ class AppBlockerOverlayService : Service() {
                                 "lastTimeUsed" to System.currentTimeMillis(),
                                 "capturedAt" to captureTimestamp
                             )
-                        } catch (e: PackageManager.NameNotFoundException) {
-                            Log.w(TAG, "App no encontrada: $packageName")
+                        } catch (_: PackageManager.NameNotFoundException) {
+                            // App desinstalada, omitir
                         }
                     }
 
                     if (usageData.isNotEmpty()) {
                         usageData["lastCaptureTime"] = captureTimestamp
                         dbUtils.uploadAppUsage(uuid, usageData)
-                        Log.d(TAG, "✅ Uso actualizado en Firebase sin duplicados: ${usageData.size - 1} apps")
+                        Log.d(TAG, "✅ Subido a Firebase: ${usageData.size - 1} apps")
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Error subiendo uso a Firebase: ${e.message}")
+                Log.e(TAG, "❌ Error subiendo a Firebase: ${e.message}")
             }
         }
     }
@@ -467,7 +499,7 @@ class AppBlockerOverlayService : Service() {
             if (limit.enabled) {
                 val limitMillis = limit.dailyLimitMinutes * 60000L
                 if (globalDailyUsage >= limitMillis) {
-                    Log.d(TAG, "⏰ Límite global excedido Tiempo de uso: $globalDailyUsage")
+                    Log.d(TAG, "⏰ Límite global excedido")
                     return true
                 }
             }
@@ -492,11 +524,7 @@ class AppBlockerOverlayService : Service() {
         val channelName = "Control Parental"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                channelName,
-                NotificationManager.IMPORTANCE_LOW
-            )
+            val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_LOW)
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(channel)
         }
@@ -547,10 +575,8 @@ class AppBlockerOverlayService : Service() {
     private fun getForegroundAppFromActivityManager(): String? {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // En Android Q+, usar queryEvents es más eficiente que queryUsageStats
-                // para solo detectar la app actual
                 val end = System.currentTimeMillis()
-                val begin = end - 5000 // 5 segundos es suficiente
+                val begin = end - 5000
 
                 val events = usageStatsManager.queryEvents(begin, end)
                 val event = UsageEvents.Event()
@@ -738,6 +764,7 @@ class AppBlockerOverlayService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
+                @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
