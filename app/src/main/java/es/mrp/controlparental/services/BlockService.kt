@@ -55,13 +55,16 @@ class AppBlockerOverlayService : Service() {
     private var globalDailyUsage: Long = 0L
     private var currentForegroundApp: String? = null
     private var foregroundAppStartTime: Long = 0L
-    private val updateUsageInterval = 60000L
+    private val updateUsageInterval = 60000L // 60 segundos para subir a Firebase
+    private val foregroundUpdateInterval = 3000L // 3 segundos para actualizar foreground app
 
     // Snapshot para detectar cambios y evitar escrituras innecesarias
     private val lastSyncedUsage = mutableMapOf<String, Long>()
     private var lastSyncedGlobalUsage: Long = 0L
     private var isInitialSnapshotLoaded = false
 
+    private var lastForegroundPackage: String? = null
+    private var lastForegroundTimestamp: Long = 0L
 
     companion object {
         private const val TAG = "AppBlockerService"
@@ -116,6 +119,7 @@ class AppBlockerOverlayService : Service() {
 
         handler.post(checkRunnable)
         handler.post(usageUpdateRunnable)
+        handler.post(foregroundUpdateRunnable) // Actualizar foreground app cada 2 segundos
     }
 
     private fun checkAndResetLocalCountersIfNeeded() {
@@ -320,6 +324,13 @@ class AppBlockerOverlayService : Service() {
         }
     }
 
+    private val foregroundUpdateRunnable = object : Runnable {
+        override fun run() {
+            updateCurrentForegroundApp()
+            handler.postDelayed(this, foregroundUpdateInterval)
+        }
+    }
+
     /**
      * PASO 3: Actualizar uso cada 60 segundos
      * Consulta UsageStatsManager local y sube a Firebase
@@ -370,7 +381,7 @@ class AppBlockerOverlayService : Service() {
 
                 // Verificar límites
                 currentForegroundApp?.let { app ->
-                    val appUsageMinutes = (dailyUsage[app] ?: 0L) / 60000
+                    val appUsageMinutes = getRealTimeUsage(app) / 60000
                     timeLimits[app]?.let { limit ->
                         if (limit.enabled) {
                             Log.d(TAG, "📊 ${limit.appName}: ${appUsageMinutes}/${limit.dailyLimitMinutes}min")
@@ -397,27 +408,103 @@ class AppBlockerOverlayService : Service() {
         }
     }
 
+    private fun updateCurrentForegroundApp() {
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - 10_000 // últimos 10 segundos
+
+        val events = usageStatsManager.queryEvents(startTime, endTime)
+        val event = UsageEvents.Event()
+
+        var eventCount = 0
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            eventCount++
+
+            when (event.eventType) {
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    val previousPackage = lastForegroundPackage
+                    lastForegroundPackage = event.packageName
+                    lastForegroundTimestamp = event.timeStamp
+
+                    if (previousPackage != lastForegroundPackage) {
+                        Log.d(TAG, "📱 FOREGROUND detectado: ${event.packageName} (timestamp: ${event.timeStamp})")
+                    }
+                }
+
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    if (event.packageName == lastForegroundPackage) {
+                        val timeInForeground = System.currentTimeMillis() - lastForegroundTimestamp
+                        Log.d(TAG, "📴 BACKGROUND detectado: ${event.packageName} (duración: ${timeInForeground / 1000}s)")
+                        lastForegroundPackage = null
+                        lastForegroundTimestamp = 0L
+                    }
+                }
+            }
+        }
+
+        // Log periódico del estado actual
+        if (lastForegroundPackage != null && lastForegroundTimestamp > 0) {
+            val currentLiveTime = System.currentTimeMillis() - lastForegroundTimestamp
+            Log.d(TAG, "⏱️ App activa: $lastForegroundPackage | Tiempo en vivo: ${currentLiveTime / 1000}s")
+        }
+    }
+    /**
+     * Calcula el tiempo real de uso combinando:
+     * 1. Tiempo histórico consolidado (dailyUsage)
+     * 2. Tiempo en vivo si la app está actualmente en foreground
+     *
+     * Esto permite medir el uso en tiempo real sin esperar a que UsageStatsManager consolide
+     */
+    private fun getRealTimeUsage(packageName: String): Long {
+        val baseUsage = dailyUsage[packageName] ?: 0L
+
+        return if (packageName == lastForegroundPackage && lastForegroundTimestamp > 0) {
+            val liveUsage = System.currentTimeMillis() - lastForegroundTimestamp
+            val totalUsage = baseUsage + liveUsage
+
+            Log.d(TAG, "📊 Tiempo real de $packageName: histórico=${baseUsage / 60000}min + vivo=${liveUsage / 1000}s = total=${totalUsage / 60000}min")
+
+            totalUsage
+        } else {
+            baseUsage
+        }
+    }
+
+
     /**
      * PASO 4: Detectar cambios y subir a Firebase solo cuando sea necesario
      */
     private fun uploadUsageToFirebaseIfChanged() {
         var hasSignificantChanges = false
-        val changeThresholdMillis = 60000L // 1 minuto
+        val changeThresholdMillis = 1000L // 1 segundos
 
-        // Verificar cambio global
-        val globalDifference = abs(globalDailyUsage - lastSyncedGlobalUsage)
-        if (globalDifference >= changeThresholdMillis) {
-            hasSignificantChanges = true
-            Log.d(TAG, "🔄 Cambio global: ${globalDifference / 60000} min")
+        // Calcular tiempo global real (con tiempo en vivo si hay app activa)
+        val realTimeGlobalUsage = if (lastForegroundPackage != null && lastForegroundTimestamp > 0) {
+            val liveUsage = System.currentTimeMillis() - lastForegroundTimestamp
+            globalDailyUsage + liveUsage
+        } else {
+            globalDailyUsage
         }
 
-        // Verificar cambios por app
-        for ((packageName, currentUsage) in dailyUsage) {
+        // Verificar cambio global
+        val globalDifference = abs(realTimeGlobalUsage - lastSyncedGlobalUsage)
+        if (globalDifference >= changeThresholdMillis) {
+            hasSignificantChanges = true
+            Log.d(TAG, "🔄 Cambio global detectado: ${globalDifference / 1000}s")
+        }
+
+        // Verificar cambios por app (usando tiempo real)
+        for ((packageName, _) in dailyUsage) {
+            val currentRealUsage = getRealTimeUsage(packageName)
             val lastUsage = lastSyncedUsage[packageName] ?: 0L
-            val difference = abs(currentUsage - lastUsage)
+            val difference = abs(currentRealUsage - lastUsage)
 
             if (difference >= changeThresholdMillis) {
                 hasSignificantChanges = true
+                if (packageName == lastForegroundPackage) {
+                    Log.d(TAG, "🔄 Cambio detectado en app activa $packageName: ${difference / 1000}s de diferencia")
+                }
             }
         }
 
@@ -425,16 +512,22 @@ class AppBlockerOverlayService : Service() {
         val newApps = dailyUsage.keys - lastSyncedUsage.keys
         if (newApps.isNotEmpty()) {
             hasSignificantChanges = true
-            Log.d(TAG, "🔄 Nuevas apps: ${newApps.size}")
+            Log.d(TAG, "🔄 Nuevas apps detectadas: ${newApps.size}")
         }
 
-        Log.d(TAG, "📤 Subiendo cambios a Firebase...")
-        uploadCurrentUsageToFirebase()
+        if (hasSignificantChanges) {
+            Log.d(TAG, "📤 Subiendo cambios a Firebase...")
+            uploadCurrentUsageToFirebase()
 
-        // Actualizar snapshot
-        lastSyncedUsage.clear()
-        lastSyncedUsage.putAll(dailyUsage)
-        lastSyncedGlobalUsage = globalDailyUsage
+            // Actualizar snapshot con tiempos reales
+            lastSyncedUsage.clear()
+            for ((packageName, _) in dailyUsage) {
+                lastSyncedUsage[packageName] = getRealTimeUsage(packageName)
+            }
+            lastSyncedGlobalUsage = realTimeGlobalUsage
+        } else {
+            Log.d(TAG, "⏸️ Sin cambios significativos - Esperando threshold de 10 segundos")
+        }
     }
 
     private fun uploadCurrentUsageToFirebase() {
@@ -462,10 +555,13 @@ class AppBlockerOverlayService : Service() {
                     }
 
                     var newIndex = 0
-                    dailyUsage.forEach { (packageName, timeInForeground) ->
+                    dailyUsage.forEach { (packageName, _) ->
                         try {
                             val appInfo = packageManager.getApplicationInfo(packageName, 0)
                             val appName = packageManager.getApplicationLabel(appInfo).toString()
+
+                            // IMPORTANTE: Usar getRealTimeUsage para incluir tiempo en vivo
+                            val realTimeUsage = getRealTimeUsage(packageName)
 
                             val key = existingPackageKeys[packageName] ?: run {
                                 while (existingPackageKeys.containsValue("app_$newIndex")) {
@@ -477,10 +573,15 @@ class AppBlockerOverlayService : Service() {
                             usageData[key] = hashMapOf(
                                 "packageName" to packageName,
                                 "appName" to appName,
-                                "timeInForeground" to timeInForeground,
+                                "timeInForeground" to realTimeUsage, // Tiempo real con medición híbrida
                                 "lastTimeUsed" to System.currentTimeMillis(),
                                 "capturedAt" to captureTimestamp
                             )
+
+                            // Log para verificar qué se sube
+                            if (packageName == lastForegroundPackage) {
+                                Log.d(TAG, "📤 Subiendo $appName con tiempo en vivo: ${realTimeUsage / 60000}min")
+                            }
                         } catch (_: PackageManager.NameNotFoundException) {
                             // App desinstalada, omitir
                         }
@@ -508,22 +609,32 @@ class AppBlockerOverlayService : Service() {
     }
 
     private fun isTimeLimitExceeded(packageName: String): Boolean {
+        // Verificar límite global con tiempo en vivo
         globalTimeLimit?.let { limit ->
             if (limit.enabled) {
                 val limitMillis = limit.dailyLimitMinutes * 60000L
-                if (globalDailyUsage >= limitMillis) {
-                    Log.d(TAG, "⏰ Límite global excedido")
+                // Calcular tiempo global en vivo sumando tiempo histórico + tiempo actual de la app en foreground
+                val realTimeGlobalUsage = if (packageName == lastForegroundPackage && lastForegroundTimestamp > 0) {
+                    val liveUsage = System.currentTimeMillis() - lastForegroundTimestamp
+                    globalDailyUsage + liveUsage
+                } else {
+                    globalDailyUsage
+                }
+
+                if (realTimeGlobalUsage >= limitMillis) {
+                    Log.d(TAG, "⏰ Límite global excedido: ${realTimeGlobalUsage / 60000}/${limit.dailyLimitMinutes}min")
                     return true
                 }
             }
         }
 
+        // Verificar límite individual con tiempo en vivo usando getRealTimeUsage
         timeLimits[packageName]?.let { limit ->
             if (limit.enabled) {
-                val usage = dailyUsage[packageName] ?: 0L
+                val realTimeUsage = getRealTimeUsage(packageName) // Usar tiempo en vivo
                 val limitMillis = limit.dailyLimitMinutes * 60000L
-                if (usage >= limitMillis) {
-                    Log.d(TAG, "⏰ Límite ${limit.appName} excedido")
+                if (realTimeUsage >= limitMillis) {
+                    Log.d(TAG, "⏰ Límite ${limit.appName} excedido: ${realTimeUsage / 60000}/${limit.dailyLimitMinutes}min")
                     return true
                 }
             }
@@ -820,6 +931,7 @@ class AppBlockerOverlayService : Service() {
         super.onDestroy()
         handler.removeCallbacks(checkRunnable)
         handler.removeCallbacks(usageUpdateRunnable)
+        handler.removeCallbacks(foregroundUpdateRunnable)
         removeOverlay()
         lastBlockedPackage = null
 

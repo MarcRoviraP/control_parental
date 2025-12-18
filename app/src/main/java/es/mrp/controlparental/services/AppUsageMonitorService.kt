@@ -4,9 +4,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.app.usage.UsageStats
-import android.app.usage.UsageStatsManager
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -14,9 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import es.mrp.controlparental.R
 import es.mrp.controlparental.utils.DataBaseUtils
-import es.mrp.controlparental.utils.hasUsageAccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -350,38 +345,6 @@ class AppUsageMonitorService : Service() {
             Log.w(TAG, "PackageManager: paquete no encontrado: $packageName")
             return true
         }
-    }
-
-    /**
-     * Obtiene las estadísticas de uso desde las 00:00 del día actual
-     */
-    private fun getUsageStats(): List<UsageStats> {
-        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val endTime = System.currentTimeMillis()
-
-        // Calcular el inicio del día (00:00:00)
-        val calendar = java.util.Calendar.getInstance()
-        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
-        calendar.set(java.util.Calendar.MINUTE, 20)
-        calendar.set(java.util.Calendar.SECOND, 0)
-        calendar.set(java.util.Calendar.MILLISECOND, 0)
-        val startTime = calendar.timeInMillis
-
-        Log.d(TAG, "📊 Obteniendo estadísticas desde las 00:00 del día actual")
-
-        val usageStatsList: List<UsageStats> = usageStatsManager.queryUsageStats(
-            UsageStatsManager.INTERVAL_DAILY,
-            startTime,
-            endTime
-        ) ?: emptyList()
-
-        for (stat in usageStatsList) {
-            Log.d(
-                TAG,
-                "Uso: ${stat.packageName} - Tiempo en foreground: ${stat.totalTimeInForeground} ms"
-            )
-        }
-        return usageStatsList
     }
 
 
