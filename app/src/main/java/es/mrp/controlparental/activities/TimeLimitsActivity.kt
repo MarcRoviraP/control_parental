@@ -162,10 +162,10 @@ class TimeLimitsActivity : AppCompatActivity() {
             editMinutes.setText("00")
         }
 
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle("")
             .setView(dialogView)
-            .setPositiveButton("Guardar") { dialog, which ->
+            .setPositiveButton("✓ Guardar") { dialog, which ->
                 val hours = editHours.text.toString().toIntOrNull() ?: 0
                 val minutes = editMinutes.text.toString().toIntOrNull() ?: 0
                 val totalMinutes = (hours * 60) + minutes
@@ -205,8 +205,25 @@ class TimeLimitsActivity : AppCompatActivity() {
                     }
                 )
             }
-            .setNegativeButton("Cancelar", null)
-            .show()
+            .setNegativeButton("✕ Salir", null)
+            .create()
+
+        alertDialog.show()
+
+        // Ajustar tamaño de los botones después de mostrar el diálogo
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+            textSize = 14f
+            setPadding(24, 16, 24, 16)
+            isAllCaps = false
+        }
+
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.apply {
+            textSize = 16f
+            setPadding(24, 16, 24, 16)
+            isAllCaps = false
+            setTextColor(resources.getColor(android.R.color.holo_red_dark))
+
+        }
     }
 
     private fun showEditDialog(timeLimit: TimeLimit) {
@@ -287,10 +304,11 @@ class TimeLimitsActivity : AppCompatActivity() {
             editMinutes.setText("00")
         }
 
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle("Editar Límite de Tiempo")
             .setView(dialogView)
-            .setPositiveButton("Guardar") { dialog, which ->
+
+            .setPositiveButton("✓ Guardar") { dialog, which ->
                 val hours = editHours.text.toString().toIntOrNull() ?: 0
                 val minutes = editMinutes.text.toString().toIntOrNull() ?: 0
                 val totalMinutes = (hours * 60) + minutes
@@ -316,18 +334,40 @@ class TimeLimitsActivity : AppCompatActivity() {
                     }
                 )
             }
-            .setNegativeButton("Cancelar", null)
-            .setNeutralButton("🗑️ Eliminar") { dialog, which ->
+            .setNegativeButton("✕ Salir", null)
+            .setNeutralButton("🗑️", { dialog, which ->
                 showDeleteConfirmation(timeLimit)
-            }
-            .show()
+            })
+            .create()
+
+        alertDialog.show()
+
+        // Ajustar tamaño de los botones después de mostrar el diálogo
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+            textSize = 14f
+            setPadding(24, 16, 24, 16)
+            isAllCaps = false
+        }
+
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.apply {
+            textSize = 16f
+            setPadding(24, 16, 24, 16)
+            isAllCaps = false
+            setTextColor(resources.getColor(android.R.color.holo_red_dark))
+        }
+
+        alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.apply {
+            textSize = 18f
+            setPadding(24, 16, 24, 16)
+            isAllCaps = false
+        }
     }
 
     private fun showDeleteConfirmation(timeLimit: TimeLimit) {
-        AlertDialog.Builder(this)
+        val alertDialog = AlertDialog.Builder(this)
             .setTitle("Eliminar Límite")
             .setMessage("¿Estás seguro de que deseas eliminar este límite de tiempo?")
-            .setPositiveButton("Eliminar") { dialog, which ->
+            .setPositiveButton("✓ Eliminar") { dialog, which ->
                 val uuid = childUuid ?: return@setPositiveButton
                 dbUtils.removeTimeLimit(
                     childUuid = uuid,
@@ -340,8 +380,23 @@ class TimeLimitsActivity : AppCompatActivity() {
                     }
                 )
             }
-            .setNegativeButton("Cancelar", null)
-            .show()
+            .setNegativeButton("✕", null)
+            .create()
+
+        alertDialog.show()
+
+        // Ajustar tamaño de los botones
+        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+            textSize = 14f
+            setPadding(24, 16, 24, 16)
+            isAllCaps = false
+        }
+
+        alertDialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.apply {
+            textSize = 16f
+            setPadding(24, 16, 24, 16)
+            isAllCaps = false
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
