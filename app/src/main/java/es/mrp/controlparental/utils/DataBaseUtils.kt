@@ -16,6 +16,7 @@ class DataBaseUtils(context: Context) {
     val collectionBlockedApps = "blockedApps"
     val collectionTimeLimits = "timeLimits"
     val collectionInstalledApps = "installedApps"
+    val collectionUsuarios = "usuarios"
 
     var auth = Firebase.auth
     var credentialManager = CredentialManager.create(context)
@@ -30,6 +31,7 @@ class DataBaseUtils(context: Context) {
         private const val TAG_BLOCKED_APPS = "DB_BLOCKED_APPS"
         private const val TAG_TIME_LIMITS = "DB_TIME_LIMITS"
         private const val TAG_INSTALLED_APPS = "DB_INSTALLED_APPS"
+        private const val TAG_USUARIOS = "DB_USUARIOS"
     }
 
     // ============================================
@@ -791,6 +793,74 @@ class DataBaseUtils(context: Context) {
                     Log.d(TAG_INSTALLED_APPS, "📦 Apps instaladas actualizadas: ${apps.size}")
                     onUpdate(apps)
                 }
+            }
+    }
+
+    // ============================================
+    // COLECCIÓN: usuarios
+    // ============================================
+
+    /**
+     * Guarda o actualiza un usuario en Firebase
+     */
+    fun saveUser(
+        uuid: String,
+        nombre: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val userData = hashMapOf(
+            "uuid" to uuid,
+            "nombre" to nombre,
+            "lastLogin" to System.currentTimeMillis()
+        )
+
+        db.collection(collectionUsuarios)
+            .document(uuid)
+            .set(userData)
+            .addOnSuccessListener {
+                Log.d(TAG_USUARIOS, "✅ Usuario guardado: $nombre (UUID: $uuid)")
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                val errorMsg = "Error guardando usuario: ${e.message}"
+                Log.e(TAG_USUARIOS, errorMsg, e)
+                onError(errorMsg)
+            }
+    }
+
+    /**
+     * Obtiene un usuario de Firebase por UUID
+     */
+    fun getUser(
+        uuid: String,
+        onSuccess: (nombre: String) -> Unit,
+        onError: (String) -> Unit = {}
+    ) {
+        db.collection(collectionUsuarios)
+            .document(uuid)
+            .get()
+            .addOnSuccessListener { document ->
+                if (document.exists()) {
+                    val nombre = document.getString("nombre")
+                    if (nombre != null) {
+                        Log.d(TAG_USUARIOS, "✅ Usuario encontrado: $nombre (UUID: $uuid)")
+                        onSuccess(nombre)
+                    } else {
+                        val errorMsg = "Usuario existe pero no tiene nombre"
+                        Log.w(TAG_USUARIOS, errorMsg)
+                        onError(errorMsg)
+                    }
+                } else {
+                    val errorMsg = "Usuario no encontrado en Firebase"
+                    Log.w(TAG_USUARIOS, errorMsg)
+                    onError(errorMsg)
+                }
+            }
+            .addOnFailureListener { e ->
+                val errorMsg = "Error obteniendo usuario: ${e.message}"
+                Log.e(TAG_USUARIOS, errorMsg, e)
+                onError(errorMsg)
             }
     }
 }

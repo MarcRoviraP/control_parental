@@ -1,18 +1,22 @@
 package es.mrp.controlparental.adapters
 
+import android.app.AlertDialog
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-
 import es.mrp.controlparental.R
 import es.mrp.controlparental.models.AppUsageInfo
 import es.mrp.controlparental.models.ChildUsageData
+import es.mrp.controlparental.utils.DataBaseUtils
 
-class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder>() {
+class ChildUsageAdapter(private val dbUtils: DataBaseUtils) : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder>() {
 
     private val childrenList = mutableListOf<ChildUsageData>()
 
@@ -22,8 +26,45 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
     // Callback para abrir la activity de gestión de límites de tiempo
     var onManageTimeLimitsClick: ((childUuid: String) -> Unit)? = null
 
+    companion object {
+        private const val PREFS_NAME = "child_aliases"
+        private const val ALIAS_PREFIX = "alias_"
+
+        /**
+         * Guarda el alias de un hijo en SharedPreferences
+         */
+        fun saveChildAlias(context: Context, childUuid: String, alias: String) {
+            val sharedPref = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            sharedPref.edit().apply {
+                putString("${ALIAS_PREFIX}$childUuid", alias)
+                apply()
+            }
+        }
+
+        /**
+         * Obtiene el alias de un hijo desde SharedPreferences
+         * @return El alias guardado o null si no existe
+         */
+        fun getChildAlias(context: Context, childUuid: String): String? {
+            val sharedPref = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return sharedPref.getString("${ALIAS_PREFIX}$childUuid", null)
+        }
+
+        /**
+         * Borra el alias de un hijo
+         */
+        fun removeChildAlias(context: Context, childUuid: String) {
+            val sharedPref = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            sharedPref.edit().apply {
+                remove("${ALIAS_PREFIX}$childUuid")
+                apply()
+            }
+        }
+    }
+
     class ChildViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val childNameTextView: TextView = itemView.findViewById(R.id.childNameTextView)
+        val editNameIcon: ImageView = itemView.findViewById(R.id.editNameIcon)
         val totalUsageTimeTextView: TextView = itemView.findViewById(R.id.totalUsageTimeTextView)
         val lastUpdateTextView: TextView = itemView.findViewById(R.id.lastUpdateTextView)
         val appsCountTextView: TextView = itemView.findViewById(R.id.appsCountTextView)
@@ -92,10 +133,21 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
     }
 
     override fun onBindViewHolder(holder: ChildViewHolder, position: Int) {
+        
         val childData = childrenList[position]
+        val context = holder.itemView.context
 
-        // Configurar información del hijo
-        holder.childNameTextView.text = "Hijo ${position + 1}"
+        // Priorizar alias sobre el nombre de Firebase
+        val displayName = getChildAlias(context, childData.childUuid) ?: childData.childName
+        holder.childNameTextView.text = displayName
+
+        // Configurar click listener para editar el nombre
+        val editClickListener = View.OnClickListener {
+            showEditNameDialog(context, childData.childUuid, displayName)
+        }
+        holder.childNameTextView.setOnClickListener(editClickListener)
+        holder.editNameIcon.setOnClickListener(editClickListener)
+
         holder.appsCountTextView.text = "${childData.apps.size} apps"
 
         // Iniciar actualización activa del tiempo desde última actualización
@@ -140,6 +192,53 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
         }
     }
 
+    /**
+     * Muestra un diálogo para editar el alias del hijo
+     */
+    private fun showEditNameDialog(context: Context, childUuid: String, currentName: String) {
+        val editText = EditText(context).apply {
+            setText(currentName)
+            hint = "Nombre del hijo"
+            setPadding(50, 40, 50, 40)
+            selectAll()
+        }
+
+        AlertDialog.Builder(context)
+            .setTitle("Editar Nombre")
+            .setMessage("Ingresa un alias para este hijo")
+            .setView(editText)
+            .setPositiveButton("Guardar") { dialog, _ ->
+                val newAlias = editText.text.toString().trim()
+                if (newAlias.isNotEmpty()) {
+                    // Guardar el alias en SharedPreferences
+                    saveChildAlias(context, childUuid, newAlias)
+
+                    // Actualizar la vista
+                    val position = childrenList.indexOfFirst { it.childUuid == childUuid }
+                    if (position != -1) {
+                        notifyItemChanged(position)
+                    }
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancelar") { dialog, _ ->
+                dialog.cancel()
+            }
+            .setNeutralButton("Restaurar") { dialog, _ ->
+                // Eliminar el alias y volver al nombre original
+                removeChildAlias(context, childUuid)
+
+                // Actualizar la vista
+                val position = childrenList.indexOfFirst { it.childUuid == childUuid }
+                if (position != -1) {
+                    notifyItemChanged(position)
+                }
+                dialog.dismiss()
+            }
+            .create()
+            .show()
+    }
+
     override fun getItemCount(): Int = childrenList.size
 
     override fun onViewRecycled(holder: ChildViewHolder) {
@@ -151,11 +250,15 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
     /**
      * Actualiza o agrega los datos de un hijo
      */
-    fun updateChildData(childUuid: String, apps: List<AppUsageInfo>, timestamp: Long) {
+    fun updateChildData(childUuid: String, apps: List<AppUsageInfo>, timestamp: Long, childName: String? = null) {
         val existingIndex = childrenList.indexOfFirst { it.childUuid == childUuid }
+
+        // Si no se proporciona nombre y ya existe, mantener el nombre anterior
+        val finalChildName = childName ?: (childrenList.getOrNull(existingIndex)?.childName ?: "Cargando...")
 
         val childData = ChildUsageData(
             childUuid = childUuid,
+            childName = finalChildName,
             timestamp = timestamp,
             apps = apps.sortedByDescending { it.timeInForeground }.take(10) // Top 10 apps
         )
@@ -165,14 +268,30 @@ class ChildUsageAdapter : RecyclerView.Adapter<ChildUsageAdapter.ChildViewHolder
             val oldData = childrenList[existingIndex]
             childrenList[existingIndex] = childData
 
-            // Solo notificar cambio si realmente cambió el timestamp o las apps
-            if (oldData.timestamp != childData.timestamp || oldData.apps != childData.apps) {
+            // Solo notificar cambio si realmente cambió el timestamp, nombre o las apps
+            if (oldData.timestamp != childData.timestamp ||
+                oldData.childName != childData.childName ||
+                oldData.apps != childData.apps) {
                 notifyItemChanged(existingIndex, childData) // Usar payload para evitar rebindeo completo
             }
         } else {
             // Agregar nuevo hijo
             childrenList.add(childData)
             notifyItemInserted(childrenList.size - 1)
+
+            // Si no se proporcionó nombre, obtenerlo de Firebase
+            if (childName == null) {
+                dbUtils.getUser(
+                    uuid = childUuid,
+                    onSuccess = { nombre ->
+                        // Actualizar el nombre una vez obtenido
+                        updateChildData(childUuid, apps, timestamp, nombre)
+                    },
+                    onError = {
+                        // Si falla, dejar el nombre por defecto
+                    }
+                )
+            }
         }
     }
 

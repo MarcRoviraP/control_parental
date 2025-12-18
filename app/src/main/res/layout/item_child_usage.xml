@@ -29,38 +29,61 @@
                 android:src="@drawable/fingerprint_dialog_fp_icon" />
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="249dp"
                 android:layout_height="wrap_content"
+                android:layout_marginRight="5dp"
                 android:layout_weight="1"
                 android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/childNameTextView"
+                <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Hijo"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="?android:attr/textColorPrimary"/>
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/childNameTextView"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:paddingStart="0dp"
+                        android:paddingEnd="4dp"
+                        android:text="Hijo"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <ImageView
+                        android:id="@+id/editNameIcon"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginStart="4dp"
+                        android:alpha="0.6"
+                        android:contentDescription="Editar nombre"
+                        android:src="@android:drawable/ic_menu_edit" />
+
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/totalUsageTimeTextView"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:text="Tiempo total: 0h 0m"
-                    android:textSize="14sp"
                     android:textColor="?attr/colorPrimary"
-                    android:textStyle="bold"
-                    android:layout_marginTop="2dp"/>
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/lastUpdateTextView"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:text="Actualizado hace 30s"
-                    android:textSize="12sp"
                     android:textColor="?android:attr/textColorSecondary"
-                    android:layout_marginTop="2dp"/>
+                    android:textSize="12sp" />
 
             </LinearLayout>
 

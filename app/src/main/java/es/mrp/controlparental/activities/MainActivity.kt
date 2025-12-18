@@ -123,7 +123,81 @@ class MainActivity : AppCompatActivity() {
             launchCredentialManager()
         } else {
             logD("Usuario ya autenticado en onResume: ${dbUtils.auth.currentUser?.email}")
+            // Verificar y guardar usuario
+            checkAndSaveUser()
         }
+    }
+
+    /**
+     * Verifica si el usuario existe en SharedPreferences, si no, lo busca en Firebase,
+     * y si tampoco está ahí, lo crea.
+     */
+    private fun checkAndSaveUser() {
+        val user = dbUtils.auth.currentUser ?: return
+        val uuid = user.uid
+        val nombre = user.displayName ?: user.email ?: "Usuario"
+
+        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logD("👤 Verificando usuario en sistema...")
+        logD("UUID: $uuid")
+        logD("Nombre: $nombre")
+
+        val sharedPref = getSharedPreferences("preferences", MODE_PRIVATE)
+        val storedUuid = sharedPref.getString("uuid", null)
+        val storedNombre = sharedPref.getString("nombre", null)
+
+        // 1. Verificar si existe en SharedPreferences
+        if (storedUuid == uuid && !storedNombre.isNullOrEmpty()) {
+            logD("✅ Usuario encontrado en SharedPreferences")
+            logD("UUID: $storedUuid")
+            logD("Nombre: $storedNombre")
+            logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            return
+        }
+
+        logD("⚠️ Usuario no encontrado en SharedPreferences")
+        logD("Buscando en Firebase...")
+
+        // 2. Buscar en Firebase
+        dbUtils.getUser(
+            uuid = uuid,
+            onSuccess = { nombreFirebase ->
+                logD("✅ Usuario encontrado en Firebase: $nombreFirebase")
+                // Guardar en SharedPreferences
+                sharedPref.edit().apply {
+                    putString("uuid", uuid)
+                    putString("nombre", nombreFirebase)
+                    apply()
+                }
+                logD("✅ Usuario guardado en SharedPreferences")
+                logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            },
+            onError = { error ->
+                logD("⚠️ Usuario no encontrado en Firebase: $error")
+                logD("Creando nuevo usuario en Firebase...")
+
+                // 3. Crear usuario en Firebase
+                dbUtils.saveUser(
+                    uuid = uuid,
+                    nombre = nombre,
+                    onSuccess = {
+                        logD("✅ Usuario creado en Firebase")
+                        // Guardar en SharedPreferences
+                        sharedPref.edit().apply {
+                            putString("uuid", uuid)
+                            putString("nombre", nombre)
+                            apply()
+                        }
+                        logD("✅ Usuario guardado en SharedPreferences")
+                        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    },
+                    onError = { errorMsg ->
+                        logE("❌ Error creando usuario en Firebase: $errorMsg")
+                        logD("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    }
+                )
+            }
+        )
     }
 
     private fun launchCredentialManager() {
@@ -276,16 +350,11 @@ class MainActivity : AppCompatActivity() {
                     logD("  - UID: ${user?.uid}")
                     logD("  - Foto: ${user?.photoUrl}")
 
-                    // NUEVO: Guardar UUID en SharedPreferences inmediatamente después del login
-                    user?.let {
-                        val sharedPref = getSharedPreferences("preferences", MODE_PRIVATE)
-                        sharedPref.edit().apply {
-                            putString("uuid", it.uid)
-                            apply()
-                        }
-                        logD("✅ UUID guardado en SharedPreferences: ${it.uid}")
+                    // Verificar y guardar usuario en SharedPreferences y Firebase
+                    checkAndSaveUser()
 
-                        // Iniciar el servicio de monitoreo si no está corriendo
+                    // Iniciar el servicio de monitoreo si no está corriendo
+                    user?.let {
                         try {
                             logD("Intentando iniciar AppUsageMonitorService...")
                             val serviceIntent = Intent(this, AppUsageMonitorService::class.java)

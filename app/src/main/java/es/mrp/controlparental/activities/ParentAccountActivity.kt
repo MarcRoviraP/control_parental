@@ -67,7 +67,7 @@ class ParentAccountActivity : AppCompatActivity() {
      * Configura el RecyclerView para mostrar la lista de hijos
      */
     private fun setupRecyclerView() {
-        childUsageAdapter = ChildUsageAdapter()
+        childUsageAdapter = ChildUsageAdapter(dbUtils)
         binding.childrenRecyclerView.apply {
             layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this@ParentAccountActivity)
             adapter = childUsageAdapter

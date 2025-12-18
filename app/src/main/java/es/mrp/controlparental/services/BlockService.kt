@@ -56,7 +56,8 @@ class AppBlockerOverlayService : Service() {
     private var currentForegroundApp: String? = null
     private var foregroundAppStartTime: Long = 0L
     private val updateUsageInterval = 60000L // 60 segundos para subir a Firebase
-    private val foregroundUpdateInterval = 3000L // 3 segundos para actualizar foreground app
+    private val foregroundUpdateInterval = 10000L // 10 segundos para actualizar foreground app
+    private val blockedAppsCheckInterval = 30000L // 30 segundos para verificar apps bloqueadas (polling adicional)
 
     // Snapshot para detectar cambios y evitar escrituras innecesarias
     private val lastSyncedUsage = mutableMapOf<String, Long>()
@@ -119,7 +120,8 @@ class AppBlockerOverlayService : Service() {
 
         handler.post(checkRunnable)
         handler.post(usageUpdateRunnable)
-        handler.post(foregroundUpdateRunnable) // Actualizar foreground app cada 2 segundos
+        handler.post(foregroundUpdateRunnable) // Actualizar foreground app cada 10 segundos
+        handler.post(blockedAppsCheckRunnable) // Polling de apps bloqueadas cada 30 segundos
     }
 
     private fun checkAndResetLocalCountersIfNeeded() {
@@ -163,8 +165,36 @@ class AppBlockerOverlayService : Service() {
             dbUtils.listenToBlockedAppsFromUsage(uuid) { blockedPackages ->
                 blockedApps.clear()
                 blockedApps.addAll(blockedPackages)
-                Log.d(TAG, "📝 Apps bloqueadas actualizadas: ${blockedApps.size}")
+                Log.d(TAG, "📝 Apps bloqueadas actualizadas (listener): ${blockedApps.size}")
                 handler.post { checkForegroundAppWithFallback() }
+            }
+        }
+    }
+
+    /**
+     * Polling adicional para verificar apps bloqueadas cada 30 segundos
+     * Esto asegura que aunque Firebase se desconecte en modo Doze, se sigan consultando las apps
+     */
+    private fun checkBlockedAppsFromFirebase() {
+        childUuid?.let { uuid ->
+            dbUtils.getChildAppUsage(uuid) { usageData ->
+                if (usageData != null) {
+                    @Suppress("UNCHECKED_CAST")
+                    val blockedAppsField = usageData["blockedApps"] as? List<String>
+
+                    if (blockedAppsField != null) {
+                        val previousSize = blockedApps.size
+                        blockedApps.clear()
+                        blockedApps.addAll(blockedAppsField)
+
+                        if (blockedApps.size != previousSize) {
+                            Log.d(TAG, "📝 Apps bloqueadas actualizadas (polling): ${blockedApps.size}")
+                        }
+
+                        // Verificar inmediatamente si la app actual debe bloquearse
+                        handler.post { checkForegroundAppWithFallback() }
+                    }
+                }
             }
         }
     }
@@ -328,6 +358,13 @@ class AppBlockerOverlayService : Service() {
         override fun run() {
             updateCurrentForegroundApp()
             handler.postDelayed(this, foregroundUpdateInterval)
+        }
+    }
+
+    private val blockedAppsCheckRunnable = object : Runnable {
+        override fun run() {
+            checkBlockedAppsFromFirebase()
+            handler.postDelayed(this, blockedAppsCheckInterval)
         }
     }
 
@@ -932,6 +969,7 @@ class AppBlockerOverlayService : Service() {
         handler.removeCallbacks(checkRunnable)
         handler.removeCallbacks(usageUpdateRunnable)
         handler.removeCallbacks(foregroundUpdateRunnable)
+        handler.removeCallbacks(blockedAppsCheckRunnable)
         removeOverlay()
         lastBlockedPackage = null
 
