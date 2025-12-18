@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
@@ -38,6 +39,7 @@ class AppBlockerOverlayService : Service() {
     private val checkInterval = 500L
     private lateinit var dbUtils: DataBaseUtils
     private var childUuid: String? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private val blockedApps = mutableSetOf<String>()
     private var overlayView: LinearLayout? = null
@@ -76,6 +78,16 @@ class AppBlockerOverlayService : Service() {
         usageStatsManager = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
         activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
         dbUtils = DataBaseUtils(this)
+
+        // Adquirir WakeLock para mantener el servicio activo incluso con pantalla apagada
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "ControlParental::BlockServiceWakeLock"
+        ).apply {
+            acquire()
+            Log.d(TAG, "🔋 WakeLock adquirido - Servicio funcionará con pantalla apagada")
+        }
 
         val sharedPref = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         childUuid = sharedPref.getString(UUID_KEY, null)
@@ -345,6 +357,7 @@ class AppBlockerOverlayService : Service() {
                         continue
                     }
 
+                    Log.d("conseguirAppsDiaria", "📊 UsageStats: ${stat.packageName} = ${stat.totalTimeInForeground / 60000} min")
 
 
                     dailyUsage[stat.packageName] = stat.totalTimeInForeground
@@ -809,6 +822,15 @@ class AppBlockerOverlayService : Service() {
         handler.removeCallbacks(usageUpdateRunnable)
         removeOverlay()
         lastBlockedPackage = null
+
+        // Liberar WakeLock
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+                Log.d(TAG, "🔋 WakeLock liberado")
+            }
+        }
+        wakeLock = null
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -4,6 +4,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -13,6 +14,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import es.mrp.controlparental.databinding.ActivityChildBinding
 import es.mrp.controlparental.utils.DataBaseUtils
 import es.mrp.controlparental.utils.AppTrackingUtils
@@ -20,6 +24,7 @@ import es.mrp.controlparental.adapters.AppListAdapter
 import es.mrp.controlparental.dialogs.QRDialog
 import es.mrp.controlparental.models.TimeLimit
 import es.mrp.controlparental.models.AppPackageClass
+import es.mrp.controlparental.workers.ServiceKeeperWorker
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -62,6 +67,9 @@ class ChildActivity : AppCompatActivity() {
 
         setupRecyclerView()
         loadHeaderData()
+
+        // Configurar WorkManager para mantener el servicio activo
+        setupServiceKeeper()
 
         // IMPORTANTE: Iniciar BlockService para que comience a trackear y subir datos
         startBlockService()
@@ -134,6 +142,28 @@ class ChildActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e("ChildActivity", "❌ Error iniciando BlockService", e)
             Log.e("ChildActivity", "Detalles: ${e.message}")
+        }
+    }
+
+    /**
+     * Configura WorkManager para verificar periódicamente que el servicio esté activo
+     * Esto es especialmente útil cuando la pantalla está apagada durante horas
+     */
+    private fun setupServiceKeeper() {
+        try {
+            val workRequest = PeriodicWorkRequestBuilder<ServiceKeeperWorker>(
+                15, TimeUnit.MINUTES // Verificar cada 15 minutos
+            ).build()
+
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                ServiceKeeperWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                workRequest
+            )
+
+            Log.d("ChildActivity", "⏰ WorkManager configurado - Verificará servicio cada 15 minutos")
+        } catch (e: Exception) {
+            Log.e("ChildActivity", "❌ Error configurando WorkManager", e)
         }
     }
 

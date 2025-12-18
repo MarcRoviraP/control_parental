@@ -3,7 +3,9 @@ package es.mrp.controlparental.activities
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +30,7 @@ class SplashActivity : ComponentActivity() {
     private var overlayPermissionRequested = false
     private var usageAccessRequested = false
     private var deviceAdminRequested = false
+    private var batteryOptimizationRequested = false
 
     private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -43,6 +46,15 @@ class SplashActivity : ComponentActivity() {
     ) {
         android.util.Log.d("SplashActivity", "📥 Resultado de Usage Access recibido")
         usageAccessRequested = true
+        // Re-verificar todos los permisos
+        checkAllPermissions()
+    }
+
+    private val batteryOptimizationLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        android.util.Log.d("SplashActivity", "📥 Resultado de Battery Optimization recibido")
+        batteryOptimizationRequested = true
         // Re-verificar todos los permisos
         checkAllPermissions()
     }
@@ -83,6 +95,7 @@ class SplashActivity : ComponentActivity() {
         val hasDeviceAdmin = isDeviceAdminActive()
         val hasOverlay = Settings.canDrawOverlays(this)
         val hasUsageAccess = hasUsageAccess(this)
+        val hasBatteryOptimization = isIgnoringBatteryOptimizations()
         val isProblematicDevice = AutoStartHelper.isProblematicManufacturer()
         val shouldShowAutoStart = AutoStartHelper.shouldShowAutoStartDialog(this)
 
@@ -91,6 +104,7 @@ class SplashActivity : ComponentActivity() {
             ✓ Device Admin: $hasDeviceAdmin
             ✓ Overlay: $hasOverlay
             ✓ Usage Access: $hasUsageAccess
+            ✓ Battery Optimization: $hasBatteryOptimization
             ✓ Es dispositivo problemático: $isProblematicDevice
             ✓ Debe mostrar auto-inicio: $shouldShowAutoStart
         """.trimIndent())
@@ -124,13 +138,22 @@ class SplashActivity : ComponentActivity() {
                 }
             }
 
-            // 4. Auto-inicio para dispositivos problemáticos (DESPUÉS de los otros permisos)
+            // 4. Exención de optimización de batería (CRÍTICO para funcionamiento 24/7)
+            !hasBatteryOptimization -> {
+                android.util.Log.w("SplashActivity", "❌ Falta exención de batería - Solicitando...")
+                if (!batteryOptimizationRequested) {
+                    showBatteryOptimizationDialog()
+                    batteryOptimizationRequested = true
+                }
+            }
+
+            // 5. Auto-inicio para dispositivos problemáticos (DESPUÉS de los otros permisos)
             isProblematicDevice && shouldShowAutoStart -> {
                 android.util.Log.w("SplashActivity", "⚠️ Dispositivo problemático - Solicitando configuración de auto-inicio...")
                 showForceAutoStartDialog()
             }
 
-            // 5. TODOS los permisos concedidos - Continuar a MainActivity
+            // 6. TODOS los permisos concedidos - Continuar a MainActivity
             else -> {
                 android.util.Log.d("SplashActivity", "✅ TODOS los permisos concedidos - Procediendo a MainActivity")
                 proceedToMainActivity()
@@ -159,6 +182,54 @@ class SplashActivity : ComponentActivity() {
     private fun requestUsageAccess() {
         val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
         usageAccessLauncher.launch(intent)
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+            powerManager.isIgnoringBatteryOptimizations(packageName)
+        } else {
+            true // En versiones anteriores no existe este permiso
+        }
+    }
+
+    private fun showBatteryOptimizationDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("⚡ Optimización de batería")
+            .setMessage(
+                "Para que el control parental funcione correctamente incluso con la pantalla apagada durante horas, " +
+                "necesitas desactivar la optimización de batería.\n\n" +
+                "Esto permite que el servicio continúe monitoreando apps 24/7."
+            )
+            .setPositiveButton("Configurar") { _, _ ->
+                requestBatteryOptimization()
+            }
+            .setNegativeButton("Más tarde") { dialog, _ ->
+                dialog.dismiss()
+                batteryOptimizationRequested = true
+                checkAllPermissions()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun requestBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                batteryOptimizationLauncher.launch(intent)
+                android.util.Log.d("SplashActivity", "⚡ Solicitando exención de optimización de batería")
+            } catch (e: Exception) {
+                android.util.Log.e("SplashActivity", "❌ Error solicitando exención de batería", e)
+                batteryOptimizationRequested = true
+                checkAllPermissions()
+            }
+        } else {
+            batteryOptimizationRequested = true
+            checkAllPermissions()
+        }
     }
 
     private fun proceedToMainActivity() {
