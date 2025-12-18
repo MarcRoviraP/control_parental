@@ -117,6 +117,8 @@
     </com.google.android.material.card.MaterialCardView>
 
     <!-- Lista de Apps -->
+
+    <!-- FloatingActionButton -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerViewApps"
         android:layout_width="0dp"
@@ -127,28 +129,29 @@
         android:layout_marginBottom="8dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.0"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/cardHeader" />
+        app:layout_constraintTop_toBottomOf="@+id/cardHeader"
+        app:layout_constraintVertical_bias="1.0" />
 
-    <!-- FloatingActionButton -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/floatingActionButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="16dp"
+        android:backgroundTint="@color/transparent"
         android:clickable="true"
         android:contentDescription="@string/scan_qr"
         android:elevation="8dp"
         android:focusable="true"
-        android:translationZ="12dp"
-        app:backgroundTint="@color/white"
+        android:tint="#FFFFFF"
         app:borderWidth="0dp"
-        app:fabSize="normal"
+        app:hoveredFocusedTranslationZ="2dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:maxImageSize="40dp"
-        app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay.App.Rounded"
+        app:rippleColor="#FFFFFF"
         app:srcCompat="@mipmap/ic_qr" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -41,17 +41,15 @@ class QRDialog : DialogFragment() {
     private var dbUtils: DataBaseUtils? = null
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        val builder = AlertDialog.Builder(requireContext())
+        // Usar el tema transparente
+        val builder = AlertDialog.Builder(requireContext(), R.style.TransparentDialog)
         val inflater = requireActivity().layoutInflater
         val view = inflater.inflate(R.layout.qr_dialog_layout, null)
 
         builder.setView(view)
             .setTitle("Código QR de Emparejamiento\n")
 
-
         val dialog = builder.create()
-        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-
         val qrImageView = view.findViewById<ImageView>(R.id.dialog_qr)
         val qrContent = createUUID()
 

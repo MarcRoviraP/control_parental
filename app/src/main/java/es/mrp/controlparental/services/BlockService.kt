@@ -166,7 +166,13 @@ class AppBlockerOverlayService : Service() {
                 blockedApps.clear()
                 blockedApps.addAll(blockedPackages)
                 Log.d(TAG, "📝 Apps bloqueadas actualizadas (listener): ${blockedApps.size}")
-                handler.post { checkForegroundAppWithFallback() }
+                Log.d(TAG, "📝 Lista de apps bloqueadas: ${blockedApps.joinToString(", ")}")
+
+                // Verificar inmediatamente la app actual
+                handler.post {
+                    Log.d(TAG, "🔍 Verificando app en foreground después de actualizar lista de bloqueadas...")
+                    checkForegroundAppWithFallback()
+                }
             }
         }
     }
@@ -703,15 +709,24 @@ class AppBlockerOverlayService : Service() {
         var packageName = getForegroundAppFromUsageStats()
 
         if (packageName == null) {
+            Log.d(TAG, "⚠️ UsageStats no detectó app en foreground, usando ActivityManager...")
             packageName = getForegroundAppFromActivityManager()
         }
 
         if (packageName != null) {
+            Log.d(TAG, "📱 App detectada en foreground: $packageName")
+            Log.d(TAG, "🔍 ¿Está bloqueada? ${blockedApps.contains(packageName)}")
+            Log.d(TAG, "📋 Apps bloqueadas actuales: ${blockedApps.joinToString(", ")}")
+
             if (blockedApps.contains(packageName)) {
+                Log.d(TAG, "🚫 ¡App está bloqueada! Procediendo a bloquear...")
                 blockApp(packageName)
             } else {
+                Log.d(TAG, "✅ App no está bloqueada, permitiendo uso")
                 trackAppChange(packageName)
             }
+        } else {
+            Log.w(TAG, "⚠️ No se pudo detectar ninguna app en foreground")
         }
     }
 
@@ -782,9 +797,16 @@ class AppBlockerOverlayService : Service() {
                 trackAppChange(packageName)
             }
 
+            // Log cada 10 segundos para evitar spam
+            if (System.currentTimeMillis() % 10000 < checkInterval) {
+                Log.d(TAG, "🔍 Verificación periódica: $packageName | ¿Bloqueada? ${blockedApps.contains(packageName)}")
+            }
+
             if (blockedApps.contains(packageName)) {
+                Log.d(TAG, "🚫 App bloqueada detectada en verificación periódica: $packageName")
                 blockApp(packageName)
             } else if (isTimeLimitExceeded(packageName)) {
+                Log.d(TAG, "⏰ Límite de tiempo excedido para: $packageName")
                 blockApp(packageName)
             }
         }
@@ -792,7 +814,13 @@ class AppBlockerOverlayService : Service() {
 
     private fun blockApp(packageName: String) {
         val currentTime = System.currentTimeMillis()
+
+        Log.d(TAG, "🚫 blockApp() llamado para: $packageName")
+        Log.d(TAG, "🕐 Última app bloqueada: $lastBlockedPackage")
+        Log.d(TAG, "🕐 Tiempo desde último bloqueo: ${currentTime - lastBlockTime}ms (cooldown: ${BLOCK_COOLDOWN}ms)")
+
         if (packageName == lastBlockedPackage && (currentTime - lastBlockTime) < BLOCK_COOLDOWN) {
+            Log.d(TAG, "⏸️ Cooldown activo - bloqueando ejecución")
             return
         }
 

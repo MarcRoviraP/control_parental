@@ -36,18 +36,18 @@
             android:orientation="horizontal"
             android:padding="16dp"
             android:gravity="center"
-            android:visibility="gone"
+            android:visibility="visible"
             android:background="?attr/colorSurface">
 
             <Button
                 android:id="@+id/btnSelectAll"
                 style="@style/ButtonTextStyle"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="8dp"
-                android:text="✅ Seleccionar todas"
-                android:textSize="13sp" />
+                android:insetTop="8dp"
+                android:rotationX="0"
+                android:text="Seleccionar todas"
+                android:textSize="18sp" />
 
 
         </LinearLayout>

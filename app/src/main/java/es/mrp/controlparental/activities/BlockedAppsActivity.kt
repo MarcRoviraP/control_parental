@@ -183,9 +183,13 @@ class BlockedAppsActivity : AppCompatActivity() {
         // Si todas están bloqueadas, el botón debe decir "Desbloquear todas"
         // Si no todas están bloqueadas, el botón debe decir "Bloquear todas"
         if (toogleBlocked) {
-            binding.btnSelectAll.text = "✅ Desbloquear todas"
+            binding.btnSelectAll.text = "Desbloquear todas"
+            binding.btnSelectAll.setTextColor(getColor(android.R.color.holo_green_light))
+
         } else {
-            binding.btnSelectAll.text = "🚫 Bloquear todas"
+            binding.btnSelectAll.text = "Bloquear todas"
+
+            binding.btnSelectAll.setTextColor(getColor(android.R.color.holo_red_light))
         }
     }
 
